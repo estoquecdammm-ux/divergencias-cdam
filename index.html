@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Divergências Diárias — Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#171e29; --panel:#1f2836; --panel-2:#232e3d; --border:#2e3a4c;
+    --text:#edeff2; --muted:#8b97a6; --accent:#e8a33d; --falta:#c4483a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background-image:linear-gradient(var(--border) 1px, transparent 1px),linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size:42px 42px;background-position:center;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;
+    background:radial-gradient(circle at 50% 40%, rgba(23,30,41,0) 0%, var(--bg) 72%);
+    pointer-events:none;
+  }
+  .login-box{
+    position:relative;z-index:1;width:360px;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;padding:34px 32px 28px 32px;box-shadow:0 20px 50px rgba(0,0,0,0.35);
+  }
+  .brand-row{display:flex;align-items:center;gap:12px;margin-bottom:26px;}
+  .mark{width:8px;height:28px;background:var(--accent);flex-shrink:0;}
+  .brand-row .name{font-weight:700;font-size:16px;font-family:'IBM Plex Sans Condensed',sans-serif;}
+  .brand-row .sub{font-size:11.5px;color:var(--muted);}
+  h1{font-size:19px;font-weight:600;margin:0 0 4px 0;font-family:'IBM Plex Sans Condensed',sans-serif;}
+  .lead{font-size:13px;color:var(--muted);margin-bottom:24px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500;}
+  .field{margin-bottom:16px;}
+  input{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;
+    padding:11px 13px;color:var(--text);font-size:16px;font-family:'IBM Plex Sans',sans-serif;letter-spacing:1px;
+  }
+  input:focus{outline:none;border-color:var(--accent);}
+  input::placeholder{color:#5c6b7d;letter-spacing:0;}
+  .btn{
+    width:100%;background:var(--accent);color:#1b1204;border:none;border-radius:6px;
+    padding:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px;
+  }
+  .btn:disabled{opacity:0.6;cursor:default;}
+  .foot{margin-top:18px;text-align:center;font-size:12px;color:var(--muted);}
+  .foot a{color:var(--accent);text-decoration:none;}
+  .error{
+    display:none;background:rgba(196,72,58,0.12);border:1px solid rgba(196,72,58,0.4);color:#e08979;
+    font-size:12.5px;padding:9px 12px;border-radius:6px;margin-bottom:16px;
+  }
+  .error.show{display:block;}
+</style>
+</head>
+<body>
+
+<div class="login-box">
+  <div class="brand-row">
+    <div class="mark"></div>
+    <div>
+      <div class="name">Divergências CDAM</div>
+      <div class="sub">filial 083 — Estoque</div>
+    </div>
+  </div>
+
+  <h1>Entrar</h1>
+  <div class="lead">Use a mesma matrícula e senha do Senior</div>
+
+  <div class="error" id="errorBox">Matrícula ou senha incorretas. Confira e tente de novo.</div>
+
+  <form id="loginForm">
+    <div class="field">
+      <label>Matrícula</label>
+      <input type="text" inputmode="numeric" pattern="[0-9]*" placeholder="000000" id="matricula" required>
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" placeholder="••••••" id="senha" required>
+    </div>
+    <button class="btn" type="submit" id="btnEntrar">Entrar</button>
+  </form>
+
+  <div class="foot">Esqueceu a senha? <a href="#">Fale com o admin</a></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAMw21LsR5VXfnta5sAaX0aFyi6zIoEqCM",
+    authDomain: "divergencias-cdam.firebaseapp.com",
+    projectId: "divergencias-cdam",
+    storageBucket: "divergencias-cdam.firebasestorage.app",
+    messagingSenderId: "333799971704",
+    appId: "1:333799971704:web:72604167900a7e1e35468d"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Domínio interno fixo pra converter matrícula em e-mail do Firebase Auth
+  const DOMINIO = "divergencias-cdam.app";
+
+  const form = document.getElementById("loginForm");
+  const errorBox = document.getElementById("errorBox");
+  const btn = document.getElementById("btnEntrar");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorBox.classList.remove("show");
+
+    const matricula = document.getElementById("matricula").value.trim();
+    const senha = document.getElementById("senha").value.trim();
+
+    if (!matricula || !senha) return;
+
+    const email = `${matricula}@${DOMINIO}`;
+
+    btn.disabled = true;
+    btn.textContent = "Entrando...";
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, senha);
+      const uid = cred.user.uid;
+
+      // Busca o perfil do usuário no Firestore pela matrícula (não pelo UID do Auth,
+      // assim fica fácil pro admin cadastrar gente nova só olhando a matrícula)
+      const perfilRef = doc(db, "div_usuarios", matricula);
+      const perfilSnap = await getDoc(perfilRef);
+
+      if (!perfilSnap.exists()) {
+        errorBox.textContent = "Login autenticado, mas sem cadastro de perfil. Fale com o admin.";
+        errorBox.classList.add("show");
+        btn.disabled = false;
+        btn.textContent = "Entrar";
+        return;
+      }
+
+      const perfil = perfilSnap.data();
+
+      if (perfil.role === "admin") {
+        window.location.href = "admin.html";
+      } else {
+        window.location.href = "estoquista.html";
+      }
+    } catch (err) {
+      console.error(err);
+      errorBox.textContent = "Matrícula ou senha incorretas. Confira e tente de novo.";
+      errorBox.classList.add("show");
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+    }
+  });
+</script>
+
+</body>
+</html>

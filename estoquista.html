@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Divergências Diárias — Estoquista</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#171e29; --panel:#1f2836; --panel-2:#232e3d; --border:#2e3a4c;
+    --text:#edeff2; --muted:#8b97a6; --accent:#e8a33d;
+    --falta:#c4483a; --falta-bg:rgba(196,72,58,0.12);
+    --sobra:#3e7cb1; --sobra-bg:rgba(62,124,177,0.12);
+    --ok:#4c9a6a; --ok-bg:rgba(76,154,106,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;display:flex;min-height:100vh;}
+  h1,h2,h3,.label{font-family:'IBM Plex Sans Condensed',sans-serif;}
+
+  nav.side{width:64px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 0;transition:width .18s ease;overflow:hidden;flex-shrink:0;z-index:10;}
+  nav.side:hover{width:220px;}
+  .brand{display:flex;align-items:center;gap:12px;padding:0 20px 24px 20px;white-space:nowrap;border-bottom:1px solid var(--border);margin-bottom:16px;}
+  .brand .mark{width:8px;height:24px;background:var(--accent);flex-shrink:0;}
+  .brand .name{font-weight:700;font-size:15px;}
+  .brand .sub{font-size:11px;color:var(--muted);}
+  .nav-item{display:flex;align-items:center;gap:14px;padding:11px 20px;white-space:nowrap;color:var(--muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left;cursor:pointer;font-family:inherit;}
+  .nav-item .ic{width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(232,163,61,0.06);}
+  .nav-item:hover{color:var(--text);}
+
+  main{flex:1;padding:28px 36px;max-width:1180px;}
+  header.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
+  header.top h1{font-size:22px;margin:0 0 4px 0;font-weight:600;}
+  header.top .meta{color:var(--muted);font-size:13px;}
+  .user-chip{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:13px;}
+  .user-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin-bottom:20px;}
+  .card h2{font-size:15px;margin:0 0 4px 0;font-weight:600;}
+  .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
+  .dropzone{border:1.5px dashed var(--border);border-radius:8px;padding:22px;text-align:center;color:var(--muted);font-size:13px;background:var(--panel-2);cursor:pointer;}
+  .dropzone:hover{border-color:var(--accent);}
+  .dropzone .accent{color:var(--accent);font-weight:600;}
+  .import-status{font-size:12.5px;margin-top:10px;display:none;}
+  .import-status.show{display:block;}
+  .import-status.ok{color:#8fd6ab;}
+  .import-status.err{color:#e08979;}
+
+  .group-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
+  .gtab{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;background:var(--panel);border:1px solid var(--border);color:var(--muted);cursor:pointer;}
+  .gtab.active{background:var(--panel-2);color:var(--text);border-color:var(--accent);}
+  .gtab .count{color:var(--muted);margin-left:6px;font-size:12px;}
+  .gtab.active .count{color:var(--accent);}
+
+  .state-row{display:flex;gap:8px;margin-bottom:18px;}
+  .state-pill{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:20px;font-size:12.5px;font-weight:500;cursor:pointer;border:1px solid transparent;}
+  .state-pill.falta{background:var(--falta-bg);color:#e08979;}
+  .state-pill.sobra{background:var(--sobra-bg);color:#8ec1e6;}
+  .state-pill.ok{background:var(--ok-bg);color:#8fd6ab;}
+  .state-pill.all{background:var(--panel-2);color:var(--text);border-color:var(--border);}
+  .state-pill.selected{border-color:currentColor;}
+
+  .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  thead th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:11.5px;border-bottom:1px solid var(--border);background:var(--panel-2);}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:rgba(255,255,255,0.02);}
+  .sku{font-weight:600;}
+  .badge{display:inline-block;padding:3px 9px;border-radius:4px;font-size:11.5px;font-weight:600;}
+  .badge.falta{background:var(--falta-bg);color:#e08979;}
+  .badge.sobra{background:var(--sobra-bg);color:#8ec1e6;}
+  .qty{font-weight:600;font-variant-numeric:tabular-nums;}
+  .qty.falta{color:#e08979;} .qty.sobra{color:#8ec1e6;}
+  .diff-tag{font-size:10.5px;color:var(--accent);background:rgba(232,163,61,0.12);padding:2px 7px;border-radius:4px;margin-left:6px;font-weight:600;}
+  input.just{width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:7px 10px;color:var(--text);font-size:13px;font-family:inherit;}
+  input.just:focus{outline:none;border-color:var(--accent);}
+  .meta-edit{font-size:11px;color:var(--muted);margin-top:4px;}
+  .empty-row td{padding:36px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<nav class="side">
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <div class="name">Divergências CDAM</div>
+      <div class="sub">filial 083</div>
+    </div>
+  </div>
+  <a class="nav-item active" href="#"><span class="ic">▤</span><span>Minhas divergências</span></a>
+  <a class="nav-item" href="#"><span class="ic">🕘</span><span>Histórico</span></a>
+  <a class="nav-item" href="#"><span class="ic">📤</span><span>Exportar Excel</span></a>
+  <button class="nav-item" id="btnLogout" style="margin-top:auto;"><span class="ic">⏻</span><span>Sair</span></button>
+</nav>
+
+<main>
+  <header class="top">
+    <div>
+      <h1>Minhas divergências</h1>
+      <div class="meta" id="dataHoje">—</div>
+    </div>
+    <div class="user-chip"><div class="dot"></div><span id="whoami">carregando...</span></div>
+  </header>
+
+  <div class="card">
+    <h2>Importar CSV do dia</h2>
+    <div class="sub">Suba o export do WISWEB já filtrado pelo(s) seu(s) grupo(s) — só esses SKUs são atualizados.</div>
+    <div class="dropzone" id="dropzone">Clique pra escolher o CSV do WISWEB de hoje</div>
+    <input type="file" id="fileInput" accept=".csv" style="display:none;">
+    <div class="import-status" id="importStatus"></div>
+  </div>
+
+  <div class="group-tabs" id="groupTabs"></div>
+
+  <div class="state-row" id="stateRow"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:120px;">Código</th>
+          <th>Descrição</th>
+          <th style="width:80px;">Tipo</th>
+          <th style="width:90px;">Qtd</th>
+          <th style="width:320px;">Justificativa</th>
+          <th style="width:110px;">Última edição</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs,
+    onSnapshot, query, where, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAMw21LsR5VXfnta5sAaX0aFyi6zIoEqCM",
+    authDomain: "divergencias-cdam.firebaseapp.com",
+    projectId: "divergencias-cdam",
+    storageBucket: "divergencias-cdam.firebasestorage.app",
+    messagingSenderId: "333799971704",
+    appId: "1:333799971704:web:72604167900a7e1e35468d"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  let meuUsuario = null; // { matricula, nome, grupos }
+  let grupoAtivo = null;
+  let estadoAtivo = "todos";
+  let divergenciasCache = [];
+  let gruposCache = []; // [{id, nome, dpto}] — todos os grupos cadastrados pelo admin
+
+  // Mantém o mapeamento nome<->dpto sempre atualizado
+  onSnapshot(collection(db, "div_grupos"), (snap) => {
+    gruposCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  });
+
+  // ---------- AUTH GUARD ----------
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const matricula = user.email.split("@")[0];
+    const perfilSnap = await getDoc(doc(db, "div_usuarios", matricula));
+    if (!perfilSnap.exists()) { window.location.href = "login.html"; return; }
+    const perfil = perfilSnap.data();
+    if (perfil.role === "admin") {
+      // admin também pode ver como estoquista se quiser, mas por padrão manda pro painel dele
+    }
+    meuUsuario = { matricula, nome: perfil.nome || matricula, grupos: perfil.grupos || [] };
+    document.getElementById("whoami").textContent =
+      `${meuUsuario.nome} · ${meuUsuario.grupos.join(", ") || "sem grupo"}`;
+    document.getElementById("dataHoje").textContent =
+      new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+    grupoAtivo = meuUsuario.grupos[0] || null;
+    renderGroupTabs();
+    watchDivergencias();
+  });
+
+  document.getElementById("btnLogout").addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "login.html";
+  });
+
+  // ---------- ABAS DE GRUPO ----------
+  function renderGroupTabs() {
+    const wrap = document.getElementById("groupTabs");
+    if (!meuUsuario.grupos.length) {
+      wrap.innerHTML = `<div style="color:var(--muted);font-size:13px;">Você ainda não tem grupo atribuído — fale com o admin.</div>`;
+      return;
+    }
+    wrap.innerHTML = meuUsuario.grupos.map(g => {
+      const count = divergenciasCache.filter(d => d.grupo === g).length;
+      return `<div class="gtab ${g === grupoAtivo ? 'active' : ''}" data-grupo="${g}">${g}<span class="count">${count}</span></div>`;
+    }).join("");
+    wrap.querySelectorAll(".gtab").forEach(el => {
+      el.addEventListener("click", () => {
+        grupoAtivo = el.dataset.grupo;
+        renderGroupTabs();
+        renderStateRow();
+        renderTable();
+      });
+    });
+  }
+
+  // ---------- FILTRO DE ESTADO ----------
+  function renderStateRow() {
+    const doGrupo = divergenciasCache.filter(d => d.grupo === grupoAtivo);
+    const nFalta = doGrupo.filter(d => d.tipo === "falta").length;
+    const nSobra = doGrupo.filter(d => d.tipo === "sobra").length;
+    const nSemJust = doGrupo.filter(d => !d.justificativa).length;
+    const wrap = document.getElementById("stateRow");
+    wrap.innerHTML = `
+      <div class="state-pill all ${estadoAtivo==='todos'?'selected':''}" data-estado="todos">Todos · ${doGrupo.length}</div>
+      <div class="state-pill falta ${estadoAtivo==='falta'?'selected':''}" data-estado="falta">Falta · ${nFalta}</div>
+      <div class="state-pill sobra ${estadoAtivo==='sobra'?'selected':''}" data-estado="sobra">Sobra · ${nSobra}</div>
+      <div class="state-pill ok ${estadoAtivo==='semjust'?'selected':''}" data-estado="semjust">Sem justificativa · ${nSemJust}</div>
+    `;
+    wrap.querySelectorAll(".state-pill").forEach(el => {
+      el.addEventListener("click", () => {
+        estadoAtivo = el.dataset.estado;
+        renderStateRow();
+        renderTable();
+      });
+    });
+  }
+
+  // ---------- TABELA ----------
+  function renderTable() {
+    const tbody = document.getElementById("tableBody");
+    let rows = divergenciasCache.filter(d => d.grupo === grupoAtivo);
+    if (estadoAtivo === "falta") rows = rows.filter(d => d.tipo === "falta");
+    if (estadoAtivo === "sobra") rows = rows.filter(d => d.tipo === "sobra");
+    if (estadoAtivo === "semjust") rows = rows.filter(d => !d.justificativa);
+
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhuma divergência aqui — bom sinal!</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map(d => {
+      const diffTag = d.mudouQuantidade ? `<span class="diff-tag">mudou de qtd</span>` : "";
+      const editInfo = d.ultimaEdicaoPor
+        ? `${d.ultimaEdicaoPor === meuUsuario.matricula ? "Você" : d.ultimaEdicaoPor} · ${formatWhen(d.ultimaEdicaoEm)}`
+        : "—";
+      return `
+        <tr>
+          <td class="sku">${d.codigo}</td>
+          <td>${d.descricao || ""} ${diffTag}</td>
+          <td><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
+          <td class="qty ${d.tipo}">${d.quantidade}</td>
+          <td><input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda"></td>
+          <td class="meta-edit">${editInfo}</td>
+        </tr>`;
+    }).join("");
+
+    tbody.querySelectorAll("input.just").forEach(inp => {
+      inp.addEventListener("change", async () => {
+        const id = inp.dataset.id;
+        await setDoc(doc(db, "div_divergencias", id), {
+          justificativa: inp.value.trim(),
+          mudouQuantidade: false,
+          ultimaEdicaoPor: meuUsuario.matricula,
+          ultimaEdicaoEm: serverTimestamp()
+        }, { merge: true });
+      });
+    });
+  }
+
+  function formatWhen(ts) {
+    if (!ts || !ts.toDate) return "—";
+    return ts.toDate().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  // ---------- OUVIR DIVERGÊNCIAS AO VIVO (só dos meus grupos) ----------
+  function watchDivergencias() {
+    if (!meuUsuario.grupos.length) return;
+    const gruposQuery = meuUsuario.grupos.slice(0, 10); // limite do "in" do Firestore
+    const q = query(collection(db, "div_divergencias"), where("grupo", "in", gruposQuery));
+    onSnapshot(q, (snap) => {
+      divergenciasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderGroupTabs();
+      renderStateRow();
+      renderTable();
+    });
+  }
+
+  // ---------- IMPORT CSV ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    await importarCsv(file);
+    fileInput.value = "";
+  });
+
+  function parseNumeroBR(str) {
+    if (str === undefined || str === null || str.trim() === "") return 0;
+    return parseFloat(str.trim().replace(/\./g, "").replace(",", ".")) || 0;
+  }
+
+  function sanitizarId(codigo) {
+    return codigo.replace(/[\/\s]/g, "_");
+  }
+
+  async function importarCsv(file) {
+    const statusEl = document.getElementById("importStatus");
+    statusEl.className = "import-status show";
+    statusEl.textContent = "Lendo arquivo...";
+
+    try {
+      const text = await file.text();
+      const linhas = text.split(/\r?\n/).filter(l => l.trim() !== "");
+      if (linhas.length < 2) throw new Error("Arquivo vazio ou sem dados.");
+
+      // Busca a lista de grupos direto do banco (fresca), sem depender do cache local
+      const gruposSnap = await getDocs(collection(db, "div_grupos"));
+      const gruposAtuais = gruposSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const cabecalho = linhas[0].split(";").map(h => h.trim().toLowerCase());
+      const idx = (nome) => cabecalho.indexOf(nome);
+
+      const iCodigo = idx("codigo");
+      const iDescricao = idx("descricao");
+      const iDpto = idx("dpto");
+      const iFalta = idx("falta");
+      const iSobra = idx("sobra");
+      const iVlrFalta = idx("vlrfalta");
+      const iVlrSobra = idx("vlrsobra");
+
+      if (iCodigo === -1 || iFalta === -1 || iSobra === -1) {
+        throw new Error("Colunas esperadas não encontradas (codigo/falta/sobra). Confira o arquivo.");
+      }
+
+      let processados = 0, ignoradosGrupo = 0, dptoNaoCadastrado = 0, novos = 0, mantidos = 0, resolvidos = 0;
+      const gruposDoUsuario = meuUsuario.grupos;
+      const iInventario = idx("inventario");
+
+      // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
+      const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
+
+      for (let i = 1; i < linhas.length; i++) {
+        const cols = linhas[i].split(";");
+        const codigo = (cols[iCodigo] || "").trim();
+        if (!codigo) continue;
+
+        const dptoCsv = (cols[iDpto] || "").trim();
+        const descricao = (cols[iDescricao] || "").trim();
+        const falta = parseNumeroBR(cols[iFalta]);
+        const sobra = parseNumeroBR(cols[iSobra]);
+        const vlrFalta = iVlrFalta !== -1 ? parseNumeroBR(cols[iVlrFalta]) : 0;
+        const vlrSobra = iVlrSobra !== -1 ? parseNumeroBR(cols[iVlrSobra]) : 0;
+        const inventario = iInventario !== -1 ? parseNumeroBR(cols[iInventario]) : 0;
+
+        // acha o grupo (nome bonito) cujo dpto cru bate com o do CSV — ignora espaços e maiúsculas/minúsculas
+        const normalizar = (s) => (s || "").toLowerCase().replace(/\s+/g, "");
+        const grupoInfo = gruposAtuais.find(g => normalizar(g.dpto) === normalizar(dptoCsv));
+        if (!grupoInfo) {
+          dptoNaoCadastrado++;
+          continue;
+        }
+        if (!gruposDoUsuario.includes(grupoInfo.nome)) {
+          ignoradosGrupo++;
+          continue;
+        }
+        const grupoFinal = grupoInfo.nome;
+
+        // soma no resumo do dia, seja ou não divergência
+        if (!totaisPorGrupo[grupoFinal]) {
+          totaisPorGrupo[grupoFinal] = { totalInventario: 0, totalValorFalta: 0, totalValorSobra: 0, totalCodigos: 0 };
+        }
+        totaisPorGrupo[grupoFinal].totalInventario += inventario;
+        totaisPorGrupo[grupoFinal].totalValorFalta += vlrFalta;
+        totaisPorGrupo[grupoFinal].totalValorSobra += vlrSobra;
+        totaisPorGrupo[grupoFinal].totalCodigos += 1;
+
+        const docId = sanitizarId(codigo);
+        const docRef = doc(db, "div_divergencias", docId);
+
+        if (falta === 0 && sobra === 0) {
+          // sem divergência hoje — se existia antes, remove (resolvido)
+          const existente = await getDoc(docRef);
+          if (existente.exists()) {
+            await deleteDoc(docRef);
+            resolvidos++;
+          }
+          continue;
+        }
+
+        const tipo = falta !== 0 ? "falta" : "sobra";
+        const quantidade = falta !== 0 ? falta : sobra;
+        const valor = falta !== 0 ? vlrFalta : vlrSobra;
+
+        const existente = await getDoc(docRef);
+        processados++;
+
+        if (existente.exists()) {
+          const antigo = existente.data();
+          const mesmaQtd = antigo.tipo === tipo && antigo.quantidade === quantidade;
+          if (mesmaQtd) {
+            // mantém justificativa, só atualiza metadados de importação
+            await setDoc(docRef, {
+              codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+              ultimaImportacaoEm: serverTimestamp()
+            }, { merge: true });
+            mantidos++;
+          } else {
+            // mudou de quantidade — limpa justificativa, sinaliza
+            await setDoc(docRef, {
+              codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+              justificativa: "", mudouQuantidade: true,
+              ultimaImportacaoEm: serverTimestamp()
+            }, { merge: true });
+            novos++;
+          }
+        } else {
+          await setDoc(docRef, {
+            codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+            justificativa: "", mudouQuantidade: false,
+            ultimaImportacaoEm: serverTimestamp()
+          });
+          novos++;
+        }
+      }
+
+      // salva o resumo do dia por grupo (usado nos KPIs do admin)
+      const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      for (const [nomeGrupo, totais] of Object.entries(totaisPorGrupo)) {
+        const grupoId = nomeGrupo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-");
+        await setDoc(doc(db, "div_resumo_diario", `${hoje}_${grupoId}`), {
+          data: hoje,
+          grupo: nomeGrupo,
+          totalInventario: totais.totalInventario,
+          totalValorFalta: totais.totalValorFalta,
+          totalValorSobra: totais.totalValorSobra,
+          totalCodigos: totais.totalCodigos,
+          importadoPor: meuUsuario.matricula,
+          importadoEm: serverTimestamp()
+        });
+      }
+
+      statusEl.className = "import-status show ok";
+      statusEl.textContent =
+        `Importado: ${processados} divergências (${mantidos} mantidas, ${novos} novas/alteradas, ${resolvidos} resolvidas)` +
+        (ignoradosGrupo > 0 ? ` · ${ignoradosGrupo} linhas de outro grupo ignoradas` : "") +
+        (dptoNaoCadastrado > 0 ? ` · ${dptoNaoCadastrado} linhas com dpto sem grupo cadastrado (fale com o admin)` : "");
+    } catch (err) {
+      console.error(err);
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Erro ao importar: " + err.message;
+    }
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Divergências Diárias — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#171e29; --panel:#1f2836; --panel-2:#232e3d; --border:#2e3a4c;
+    --text:#edeff2; --muted:#8b97a6; --accent:#e8a33d;
+    --falta:#c4483a; --falta-bg:rgba(196,72,58,0.12);
+    --sobra:#3e7cb1; --sobra-bg:rgba(62,124,177,0.12);
+    --ok:#4c9a6a; --ok-bg:rgba(76,154,106,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;display:flex;min-height:100vh;}
+  h1,h2,h3,.label{font-family:'IBM Plex Sans Condensed',sans-serif;}
+
+  nav.side{
+    width:64px;background:var(--panel);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:20px 0;transition:width .18s ease;
+    overflow:hidden;flex-shrink:0;z-index:10;
+  }
+  nav.side:hover{width:230px;}
+  .brand{display:flex;align-items:center;gap:12px;padding:0 20px 24px 20px;white-space:nowrap;border-bottom:1px solid var(--border);margin-bottom:16px;}
+  .brand .mark{width:8px;height:24px;background:var(--accent);flex-shrink:0;}
+  .brand .name{font-weight:700;font-size:15px;}
+  .brand .sub{font-size:11px;color:var(--muted);}
+  .nav-item{display:flex;align-items:center;gap:14px;padding:11px 20px;white-space:nowrap;color:var(--muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left;cursor:pointer;font-family:inherit;}
+  .nav-item .ic{width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(232,163,61,0.06);}
+  .nav-item:hover{color:var(--text);}
+  .nav-section{padding:14px 20px 4px 20px;font-size:10.5px;color:#5c6b7d;white-space:nowrap;letter-spacing:.3px;}
+
+  main{flex:1;padding:28px 36px;max-width:1240px;}
+  header.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+  header.top h1{font-size:22px;margin:0 0 4px 0;font-weight:600;}
+  header.top .meta{color:var(--muted);font-size:13px;}
+  .btn{background:var(--accent);color:#1b1204;border:none;border-radius:6px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;}
+  .btn.secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--border);}
+  .btn:disabled{opacity:.6;cursor:default;}
+
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px;}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+  .kpi .num{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
+  .soon-note{font-size:11.5px;color:var(--muted);margin:-6px 0 24px 2px;}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:22px;}
+  .card h2{font-size:15px;margin:0 0 4px 0;font-weight:600;}
+  .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px;}
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;}
+
+  .cols{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{text-align:left;padding:9px 12px;color:var(--muted);font-weight:600;font-size:11px;border-bottom:1px solid var(--border);background:var(--panel-2);}
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--border);}
+  tbody tr:last-child td{border-bottom:none;}
+  .chip{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:600;background:var(--panel-2);border:1px solid var(--border);color:var(--muted);margin:1px 3px 1px 0;}
+  .chip.assigned{color:var(--text);border-color:#3d4c60;}
+  .role-admin{color:var(--accent);font-weight:600;font-size:11.5px;}
+  .role-estoquista{color:var(--muted);font-size:11.5px;}
+  .empty-row td{text-align:center;color:var(--muted);padding:22px;}
+
+  /* MODAL */
+  .modal-overlay{
+    display:none;position:fixed;inset:0;background:rgba(10,13,18,0.6);
+    align-items:center;justify-content:center;z-index:50;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:26px 28px;width:400px;max-width:90vw;}
+  .modal h3{margin:0 0 4px 0;font-size:16px;}
+  .modal .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px;}
+  .field{margin-bottom:14px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500;}
+  input[type=text],input[type=password],select{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;
+    padding:9px 11px;color:var(--text);font-size:13.5px;font-family:inherit;
+  }
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+  .checks{display:flex;flex-wrap:wrap;gap:8px;}
+  .check-pill{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:12px;cursor:pointer;}
+  .check-pill input{width:auto;margin:0;}
+  .modal-actions{display:flex;gap:10px;margin-top:20px;}
+  .modal-actions .btn{flex:1;}
+  .modal-error{display:none;background:rgba(196,72,58,0.12);border:1px solid rgba(196,72,58,0.4);color:#e08979;font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:12px;}
+  .modal-error.show{display:block;}
+</style>
+</head>
+<body>
+
+<nav class="side">
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <div class="name">Divergências CDAM</div>
+      <div class="sub" id="whoami">painel admin</div>
+    </div>
+  </div>
+  <a class="nav-item active" href="#"><span class="ic">▤</span><span>Visão geral</span></a>
+  <a class="nav-item" href="#"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
+  <div class="nav-section">GESTÃO</div>
+  <a class="nav-item" href="#"><span class="ic">👤</span><span>Usuários</span></a>
+  <a class="nav-item" href="#"><span class="ic">🏷</span><span>Grupos</span></a>
+  <a class="nav-item" href="#"><span class="ic">📤</span><span>Exportar Excel</span></a>
+  <button class="nav-item" id="btnLogout" style="margin-top:auto;"><span class="ic">⏻</span><span>Sair</span></button>
+</nav>
+
+<main>
+  <header class="top">
+    <div>
+      <h1>Visão geral — divergências</h1>
+      <div class="meta" id="dataHoje">—</div>
+    </div>
+    <button class="btn secondary">Exportar Excel do dia</button>
+  </header>
+
+  <div class="kpi-row" id="kpiRowContagem">
+    <div class="kpi falta"><div class="num" id="kpiFalta">—</div><div class="lbl">Em falta</div></div>
+    <div class="kpi sobra"><div class="num" id="kpiSobra">—</div><div class="lbl">Em sobra</div></div>
+    <div class="kpi ok"><div class="num" id="kpiComJustificativa">—</div><div class="lbl">Com justificativa</div></div>
+    <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
+  </div>
+
+  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">
+    <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
+    <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
+    <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
+  </div>
+  <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+
+  <div class="card" style="margin-bottom:22px;">
+    <h2>Acompanhamento por pessoa</h2>
+    <div class="sub">Progresso de cada estoquista nos grupos que cuida hoje</div>
+    <table>
+      <thead><tr><th>Pessoa</th><th>Grupos</th><th>Última importação</th><th>Progresso (justificado)</th><th>Pendências</th><th>Status</th></tr></thead>
+      <tbody id="acompanhamentoBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Usuários</h2>
+          <div class="sub">Cada pessoa só edita divergências dos grupos atribuídos a ela</div>
+        </div>
+        <button class="btn" id="btnNovoUsuario">+ Novo usuário</button>
+      </div>
+      <table>
+        <thead><tr><th>Matrícula</th><th>Nome</th><th>Grupos</th><th>Papel</th></tr></thead>
+        <tbody id="usuariosBody"><tr class="empty-row"><td colspan="4">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Grupos</h2>
+          <div class="sub">Linhas de produto usadas pra filtrar divergências por pessoa</div>
+        </div>
+        <button class="btn" id="btnNovoGrupo">+ Grupo</button>
+      </div>
+      <table>
+        <thead><tr><th>Grupo</th><th>dpto (WISWEB)</th></tr></thead>
+        <tbody id="gruposBody"><tr class="empty-row"><td colspan="2">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- MODAL: Novo usuário -->
+<div class="modal-overlay" id="modalUsuario">
+  <div class="modal">
+    <h3>Novo usuário</h3>
+    <div class="sub">Matrícula e senha iguais às do Senior</div>
+    <div class="modal-error" id="erroUsuario"></div>
+    <div class="field">
+      <label>Matrícula</label>
+      <input type="text" inputmode="numeric" id="novaMatricula" placeholder="000000">
+    </div>
+    <div class="field">
+      <label>Nome</label>
+      <input type="text" id="novoNome" placeholder="Nome completo">
+    </div>
+    <div class="field">
+      <label>Senha inicial</label>
+      <input type="password" inputmode="numeric" id="novaSenha" placeholder="••••••">
+    </div>
+    <div class="field">
+      <label>Papel</label>
+      <select id="novoRole">
+        <option value="estoquista">Estoquista</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Grupos</label>
+      <div class="checks" id="checksGrupos"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="cancelarUsuario">Cancelar</button>
+      <button class="btn" id="salvarUsuario">Criar usuário</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Novo grupo -->
+<div class="modal-overlay" id="modalGrupo">
+  <div class="modal">
+    <h3>Novo grupo</h3>
+    <div class="sub">Linha de produto (ex.: Eletro, Colchões)</div>
+    <div class="modal-error" id="erroGrupo"></div>
+    <div class="field">
+      <label>Nome do grupo</label>
+      <input type="text" id="novoGrupoNome" placeholder="Ex.: Linha Marrom">
+    </div>
+    <div class="field">
+      <label>dpto (como aparece no CSV do WISWEB)</label>
+      <input type="text" id="novoGrupoDpto" placeholder="Ex.: CAMA / MESA / BANHO">
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="cancelarGrupo">Cancelar</button>
+      <button class="btn" id="salvarGrupo">Criar grupo</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth, onAuthStateChanged, signOut,
+    createUserWithEmailAndPassword, signOut as signOutSecondary
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, collection, onSnapshot, query, orderBy, where
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAMw21LsR5VXfnta5sAaX0aFyi6zIoEqCM",
+    authDomain: "divergencias-cdam.firebaseapp.com",
+    projectId: "divergencias-cdam",
+    storageBucket: "divergencias-cdam.firebasestorage.app",
+    messagingSenderId: "333799971704",
+    appId: "1:333799971704:web:72604167900a7e1e35468d"
+  };
+  const DOMINIO = "divergencias-cdam.app";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // ---------- AUTH GUARD ----------
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = "login.html";
+      return;
+    }
+    const matricula = user.email.split("@")[0];
+    const perfilSnap = await getDoc(doc(db, "div_usuarios", matricula));
+    if (!perfilSnap.exists() || perfilSnap.data().role !== "admin") {
+      window.location.href = "estoquista.html";
+      return;
+    }
+    document.getElementById("whoami").textContent = perfilSnap.data().nome || matricula;
+    document.getElementById("dataHoje").textContent =
+      new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  });
+
+  document.getElementById("btnLogout").addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "login.html";
+  });
+
+  // ---------- GRUPOS: listar em tempo real ----------
+  let gruposCache = [];
+  onSnapshot(query(collection(db, "div_grupos"), orderBy("nome")), (snap) => {
+    gruposCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const tbody = document.getElementById("gruposBody");
+    if (gruposCache.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="2">Nenhum grupo cadastrado ainda</td></tr>`;
+    } else {
+      tbody.innerHTML = gruposCache.map(g => `<tr><td>${g.nome}</td><td style="color:var(--muted);font-size:12px;">${g.dpto || "—"}</td></tr>`).join("");
+    }
+    renderChecksGrupos();
+    renderDashboard();
+  });
+
+  function renderChecksGrupos() {
+    const wrap = document.getElementById("checksGrupos");
+    wrap.innerHTML = gruposCache.map(g => `
+      <label class="check-pill">
+        <input type="checkbox" value="${g.nome}"> ${g.nome}
+      </label>
+    `).join("") || `<span style="color:var(--muted);font-size:12px;">Cadastre um grupo primeiro</span>`;
+  }
+
+  // ---------- USUÁRIOS: listar em tempo real ----------
+  let usuariosCache = [];
+  onSnapshot(collection(db, "div_usuarios"), (snap) => {
+    const tbody = document.getElementById("usuariosBody");
+    if (snap.empty) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Nenhum usuário cadastrado</td></tr>`;
+      usuariosCache = [];
+    } else {
+      usuariosCache = snap.docs.map(d => ({ matricula: d.id, ...d.data() }));
+      const rows = usuariosCache.map(u => {
+        const grupos = (u.grupos || []).map(g => `<span class="chip assigned">${g}</span>`).join("");
+        const papel = u.role === "admin"
+          ? `<span class="role-admin">● admin</span>`
+          : `<span class="role-estoquista">○ estoquista</span>`;
+        return `<tr><td>${u.matricula}</td><td>${u.nome || "—"}</td><td>${grupos || "—"}</td><td>${papel}</td></tr>`;
+      });
+      tbody.innerHTML = rows.join("");
+    }
+    renderDashboard();
+  });
+
+  // ---------- DIVERGÊNCIAS: para os KPIs de quantidade ----------
+  let divergenciasCache = [];
+  onSnapshot(collection(db, "div_divergencias"), (snap) => {
+    divergenciasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+  });
+
+  // ---------- RESUMO DIÁRIO: para os KPIs de R$ e acompanhamento ----------
+  const hoje = new Date().toISOString().slice(0, 10);
+  let resumoHojeCache = [];
+  onSnapshot(query(collection(db, "div_resumo_diario"), where("data", "==", hoje)), (snap) => {
+    resumoHojeCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+  });
+
+  function formatBRL(v) {
+    return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function renderDashboard() {
+    // KPIs de quantidade (todas as divergências abertas, de todos os grupos)
+    const nFalta = divergenciasCache.filter(d => d.tipo === "falta").length;
+    const nSobra = divergenciasCache.filter(d => d.tipo === "sobra").length;
+    const nComJust = divergenciasCache.filter(d => d.justificativa).length;
+    const gruposCadastrados = gruposCache.map(g => g.nome);
+    const nSemGrupo = divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    document.getElementById("kpiFalta").textContent = nFalta;
+    document.getElementById("kpiSobra").textContent = nSobra;
+    document.getElementById("kpiComJustificativa").textContent = nComJust;
+    document.getElementById("kpiSemGrupo").textContent = nSemGrupo;
+
+    // KPIs de R$ (soma dos grupos que já importaram hoje)
+    const totalInv = resumoHojeCache.reduce((s, r) => s + (r.totalInventario || 0), 0);
+    const totalVF = resumoHojeCache.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
+    const totalVS = resumoHojeCache.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    document.getElementById("kpiValorInventario").textContent = formatBRL(totalInv);
+    document.getElementById("kpiValorFalta").textContent = formatBRL(totalVF);
+    document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
+
+    // Acompanhamento por pessoa
+    const tbody = document.getElementById("acompanhamentoBody");
+    const estoquistas = usuariosCache.filter(u => (u.grupos || []).length > 0);
+    if (estoquistas.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum usuário com grupo atribuído ainda</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = estoquistas.map(u => {
+      const meusGrupos = u.grupos || [];
+      const gruposChips = meusGrupos.map(g => `<span class="chip assigned">${g}</span>`).join("");
+
+      // última importação: a mais recente entre os resumos de hoje dos grupos dessa pessoa
+      const resumosDaPessoa = resumoHojeCache.filter(r => meusGrupos.includes(r.grupo));
+      const importouTudoHoje = meusGrupos.length > 0 && resumosDaPessoa.length >= meusGrupos.length;
+      let ultimaImportacao = "ainda não subiu";
+      if (resumosDaPessoa.length > 0) {
+        const maisRecente = resumosDaPessoa.reduce((a, b) =>
+          (a.importadoEm?.toMillis?.() || 0) > (b.importadoEm?.toMillis?.() || 0) ? a : b
+        );
+        if (maisRecente.importadoEm?.toDate) {
+          ultimaImportacao = maisRecente.importadoEm.toDate().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        }
+      }
+
+      // progresso: % de divergências dos grupos dela que têm justificativa
+      const divergenciasDaPessoa = divergenciasCache.filter(d => meusGrupos.includes(d.grupo));
+      const totalDiv = divergenciasDaPessoa.length;
+      const comJust = divergenciasDaPessoa.filter(d => d.justificativa).length;
+      const pendencias = totalDiv - comJust;
+      const pct = totalDiv > 0 ? Math.round((comJust / totalDiv) * 100) : 0;
+      const barColor = pct >= 70 ? "var(--ok)" : (pct >= 30 ? "var(--accent)" : "var(--falta)");
+
+      let statusHtml;
+      if (resumosDaPessoa.length === 0) {
+        statusHtml = `<span class="status-off">○ pendente</span>`;
+      } else if (importouTudoHoje && pendencias === 0) {
+        statusHtml = `<span class="status-ok">● em dia</span>`;
+      } else if (importouTudoHoje) {
+        statusHtml = `<span style="color:var(--accent);font-size:11px;">● com pendências</span>`;
+      } else {
+        statusHtml = `<span style="color:var(--falta);font-size:11px;">● atrasado</span>`;
+      }
+
+      return `
+        <tr>
+          <td>${u.nome || u.matricula}</td>
+          <td>${gruposChips}</td>
+          <td>${ultimaImportacao}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${barColor};"></div>
+              </div>
+              <span style="font-size:12px;color:var(--muted);">${totalDiv > 0 ? pct + "%" : "—"}</span>
+            </div>
+          </td>
+          <td style="color:${pendencias > 0 ? 'var(--accent)' : 'var(--muted)'};font-weight:600;">${totalDiv > 0 ? pendencias : "—"}</td>
+          <td>${statusHtml}</td>
+        </tr>`;
+    }).join("");
+  }
+
+  // ---------- MODAL: novo grupo ----------
+  const modalGrupo = document.getElementById("modalGrupo");
+  document.getElementById("btnNovoGrupo").addEventListener("click", () => {
+    document.getElementById("novoGrupoNome").value = "";
+    document.getElementById("novoGrupoDpto").value = "";
+    document.getElementById("erroGrupo").classList.remove("show");
+    modalGrupo.classList.add("show");
+  });
+  document.getElementById("cancelarGrupo").addEventListener("click", () => modalGrupo.classList.remove("show"));
+
+  document.getElementById("salvarGrupo").addEventListener("click", async () => {
+    const nome = document.getElementById("novoGrupoNome").value.trim();
+    const dpto = document.getElementById("novoGrupoDpto").value.trim();
+    const erroBox = document.getElementById("erroGrupo");
+    if (!nome || !dpto) {
+      erroBox.textContent = "Preenche o nome e o dpto (copia igualzinho do CSV do WISWEB).";
+      erroBox.classList.add("show");
+      return;
+    }
+    const id = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-");
+    try {
+      await setDoc(doc(db, "div_grupos", id), { nome, dpto });
+      modalGrupo.classList.remove("show");
+    } catch (err) {
+      erroBox.textContent = "Erro ao salvar: " + err.message;
+      erroBox.classList.add("show");
+    }
+  });
+
+  // ---------- MODAL: novo usuário (usa app secundário pra não perder sua sessão) ----------
+  const modalUsuario = document.getElementById("modalUsuario");
+  document.getElementById("btnNovoUsuario").addEventListener("click", () => {
+    document.getElementById("novaMatricula").value = "";
+    document.getElementById("novoNome").value = "";
+    document.getElementById("novaSenha").value = "";
+    document.getElementById("novoRole").value = "estoquista";
+    document.getElementById("erroUsuario").classList.remove("show");
+    renderChecksGrupos();
+    modalUsuario.classList.add("show");
+  });
+  document.getElementById("cancelarUsuario").addEventListener("click", () => modalUsuario.classList.remove("show"));
+
+  document.getElementById("salvarUsuario").addEventListener("click", async () => {
+    const matricula = document.getElementById("novaMatricula").value.trim();
+    const nome = document.getElementById("novoNome").value.trim();
+    const senha = document.getElementById("novaSenha").value.trim();
+    const role = document.getElementById("novoRole").value;
+    const grupos = Array.from(document.querySelectorAll("#checksGrupos input:checked")).map(c => c.value);
+    const erroBox = document.getElementById("erroUsuario");
+    erroBox.classList.remove("show");
+
+    if (!matricula || !nome || !senha) {
+      erroBox.textContent = "Preenche matrícula, nome e senha.";
+      erroBox.classList.add("show");
+      return;
+    }
+
+    const btn = document.getElementById("salvarUsuario");
+    btn.disabled = true;
+    btn.textContent = "Criando...";
+
+    // App secundário: cria a conta sem trocar a sessão do admin logado
+    const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      const email = `${matricula}@${DOMINIO}`;
+      await createUserWithEmailAndPassword(secondaryAuth, email, senha);
+      await signOutSecondary(secondaryAuth);
+
+      await setDoc(doc(db, "div_usuarios", matricula), { nome, role, grupos });
+
+      modalUsuario.classList.remove("show");
+    } catch (err) {
+      erroBox.textContent = "Erro ao criar: " + err.message;
+      erroBox.classList.add("show");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Criar usuário";
+    }
+  });
+</script>
+
+</body>
+</html>
