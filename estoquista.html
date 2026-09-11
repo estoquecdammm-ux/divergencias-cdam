@@ -90,48 +90,64 @@
       <div class="sub">filial 083</div>
     </div>
   </div>
-  <a class="nav-item active" href="#"><span class="ic">▤</span><span>Minhas divergências</span></a>
-  <a class="nav-item" href="#"><span class="ic">🕘</span><span>Histórico</span></a>
-  <a class="nav-item" href="#"><span class="ic">📤</span><span>Exportar Excel</span></a>
+  <a class="nav-item active" href="#" data-secao="minhas"><span class="ic">▤</span><span>Minhas divergências</span></a>
+  <a class="nav-item" href="#" data-secao="historico"><span class="ic">🕘</span><span>Histórico</span></a>
+  <a class="nav-item" href="#" data-secao="excel"><span class="ic">📤</span><span>Exportar Excel</span></a>
   <button class="nav-item" id="btnLogout" style="margin-top:auto;"><span class="ic">⏻</span><span>Sair</span></button>
 </nav>
 
 <main>
   <header class="top">
     <div>
-      <h1>Minhas divergências</h1>
+      <h1 id="tituloSecao">Minhas divergências</h1>
       <div class="meta" id="dataHoje">—</div>
     </div>
     <div class="user-chip"><div class="dot"></div><span id="whoami">carregando...</span></div>
   </header>
 
-  <div class="card">
-    <h2>Importar CSV do dia</h2>
-    <div class="sub">Suba o export do WISWEB já filtrado pelo(s) seu(s) grupo(s) — só esses SKUs são atualizados.</div>
-    <div class="dropzone" id="dropzone">Clique pra escolher o CSV do WISWEB de hoje</div>
-    <input type="file" id="fileInput" accept=".csv" style="display:none;">
-    <div class="import-status" id="importStatus"></div>
-  </div>
+  <section id="secao-minhas" class="secao">
+    <div class="card">
+      <h2>Importar CSV do dia</h2>
+      <div class="sub">Suba o export do WISWEB já filtrado pelo(s) seu(s) grupo(s) — só esses SKUs são atualizados.</div>
+      <div class="dropzone" id="dropzone">Clique pra escolher o CSV do WISWEB de hoje</div>
+      <input type="file" id="fileInput" accept=".csv" style="display:none;">
+      <div class="import-status" id="importStatus"></div>
+    </div>
 
-  <div class="group-tabs" id="groupTabs"></div>
+    <div class="group-tabs" id="groupTabs"></div>
 
-  <div class="state-row" id="stateRow"></div>
+    <div class="state-row" id="stateRow"></div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th style="width:120px;">Código</th>
-          <th>Descrição</th>
-          <th style="width:80px;">Tipo</th>
-          <th style="width:90px;">Qtd</th>
-          <th style="width:320px;">Justificativa</th>
-          <th style="width:110px;">Última edição</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
-    </table>
-  </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px;">Código</th>
+            <th>Descrição</th>
+            <th style="width:80px;">Tipo</th>
+            <th style="width:90px;">Qtd</th>
+            <th style="width:320px;">Justificativa</th>
+            <th style="width:110px;">Última edição</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="secao-historico" class="secao" style="display:none;">
+    <div class="card">
+      <h2>Histórico</h2>
+      <div class="sub">Ainda não disponível — em breve dá pra ver dias anteriores aqui.</div>
+    </div>
+  </section>
+
+  <section id="secao-excel" class="secao" style="display:none;">
+    <div class="card">
+      <h2>Exportar Excel</h2>
+      <div class="sub">Ainda não disponível — assim que tivermos um exemplo real da planilha, essa exportação vai gerar o arquivo idêntico ao de hoje.</div>
+    </div>
+  </section>
 </main>
 
 <script type="module">
@@ -154,6 +170,20 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+
+  // ---------- NAVEGAÇÃO ENTRE SEÇÕES ----------
+  const titulos = { "minhas": "Minhas divergências", "historico": "Histórico", "excel": "Exportar Excel" };
+  document.querySelectorAll(".nav-item[data-secao]").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.preventDefault();
+      const alvo = item.dataset.secao;
+      document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
+      document.getElementById(`secao-${alvo}`).style.display = "";
+      document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
+      item.classList.add("active");
+      document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
+    });
+  });
 
   let meuUsuario = null; // { matricula, nome, grupos }
   let grupoAtivo = null;

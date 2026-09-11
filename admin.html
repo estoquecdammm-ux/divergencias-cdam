@@ -106,48 +106,51 @@
       <div class="sub" id="whoami">painel admin</div>
     </div>
   </div>
-  <a class="nav-item active" href="#"><span class="ic">▤</span><span>Visão geral</span></a>
-  <a class="nav-item" href="#"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
+  <a class="nav-item active" href="#" data-secao="visao-geral"><span class="ic">▤</span><span>Visão geral</span></a>
+  <a class="nav-item" href="#" data-secao="acompanhamento"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
   <div class="nav-section">GESTÃO</div>
-  <a class="nav-item" href="#"><span class="ic">👤</span><span>Usuários</span></a>
-  <a class="nav-item" href="#"><span class="ic">🏷</span><span>Grupos</span></a>
-  <a class="nav-item" href="#"><span class="ic">📤</span><span>Exportar Excel</span></a>
+  <a class="nav-item" href="#" data-secao="usuarios"><span class="ic">👤</span><span>Usuários</span></a>
+  <a class="nav-item" href="#" data-secao="grupos"><span class="ic">🏷</span><span>Grupos</span></a>
+  <a class="nav-item" href="#" data-secao="excel"><span class="ic">📤</span><span>Exportar Excel</span></a>
   <button class="nav-item" id="btnLogout" style="margin-top:auto;"><span class="ic">⏻</span><span>Sair</span></button>
 </nav>
 
 <main>
   <header class="top">
     <div>
-      <h1>Visão geral — divergências</h1>
+      <h1 id="tituloSecao">Visão geral — divergências</h1>
       <div class="meta" id="dataHoje">—</div>
     </div>
-    <button class="btn secondary">Exportar Excel do dia</button>
   </header>
 
-  <div class="kpi-row" id="kpiRowContagem">
-    <div class="kpi falta"><div class="num" id="kpiFalta">—</div><div class="lbl">Em falta</div></div>
-    <div class="kpi sobra"><div class="num" id="kpiSobra">—</div><div class="lbl">Em sobra</div></div>
-    <div class="kpi ok"><div class="num" id="kpiComJustificativa">—</div><div class="lbl">Com justificativa</div></div>
-    <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
-  </div>
+  <section id="secao-visao-geral" class="secao">
+    <div class="kpi-row" id="kpiRowContagem">
+      <div class="kpi falta"><div class="num" id="kpiFalta">—</div><div class="lbl">Em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="kpiSobra">—</div><div class="lbl">Em sobra</div></div>
+      <div class="kpi ok"><div class="num" id="kpiComJustificativa">—</div><div class="lbl">Com justificativa</div></div>
+      <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
+    </div>
 
-  <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">
-    <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
-    <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
-    <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
-  </div>
-  <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+    <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">
+      <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
+      <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
+      <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
+    </div>
+    <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+  </section>
 
-  <div class="card" style="margin-bottom:22px;">
-    <h2>Acompanhamento por pessoa</h2>
-    <div class="sub">Progresso de cada estoquista nos grupos que cuida hoje</div>
-    <table>
-      <thead><tr><th>Pessoa</th><th>Grupos</th><th>Última importação</th><th>Progresso (justificado)</th><th>Pendências</th><th>Status</th></tr></thead>
-      <tbody id="acompanhamentoBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
-    </table>
-  </div>
+  <section id="secao-acompanhamento" class="secao" style="display:none;">
+    <div class="card" style="margin-bottom:22px;">
+      <h2>Acompanhamento por pessoa</h2>
+      <div class="sub">Progresso de cada estoquista nos grupos que cuida hoje</div>
+      <table>
+        <thead><tr><th>Pessoa</th><th>Grupos</th><th>Última importação</th><th>Progresso (justificado)</th><th>Pendências</th><th>Status</th></tr></thead>
+        <tbody id="acompanhamentoBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
-  <div class="cols">
+  <section id="secao-usuarios" class="secao" style="display:none;">
     <div class="card">
       <div class="card-head">
         <div>
@@ -162,6 +165,14 @@
       </table>
     </div>
 
+    <div class="card danger-card" style="margin-top:20px;">
+      <h2>Zona de perigo</h2>
+      <div class="sub" style="color:var(--muted);">Apaga todas as divergências e resumos diários (útil pra limpar dados de teste). Não apaga usuários nem grupos.</div>
+      <button class="btn-danger" id="btnLimparTudo">Apagar todas as divergências e resumos</button>
+    </div>
+  </section>
+
+  <section id="secao-grupos" class="secao" style="display:none;">
     <div class="card">
       <div class="card-head">
         <div>
@@ -175,13 +186,14 @@
         <tbody id="gruposBody"><tr class="empty-row"><td colspan="3">Carregando...</td></tr></tbody>
       </table>
     </div>
-  </div>
+  </section>
 
-  <div class="card danger-card">
-    <h2>Zona de perigo</h2>
-    <div class="sub" style="color:var(--muted);">Apaga todas as divergências e resumos diários (útil pra limpar dados de teste). Não apaga usuários nem grupos.</div>
-    <button class="btn-danger" id="btnLimparTudo">Apagar todas as divergências e resumos</button>
-  </div>
+  <section id="secao-excel" class="secao" style="display:none;">
+    <div class="card">
+      <h2>Exportar Excel</h2>
+      <div class="sub">Ainda não disponível — assim que tivermos um exemplo real da planilha pra seguir o padrão, essa exportação vai gerar o arquivo idêntico ao de hoje.</div>
+    </div>
+  </section>
 </main>
 
 <!-- MODAL: Novo usuário -->
@@ -262,6 +274,27 @@
   const DOMINIO = "divergencias-cdam.app";
 
   const app = initializeApp(firebaseConfig);
+
+  // ---------- NAVEGAÇÃO ENTRE SEÇÕES ----------
+  const titulos = {
+    "visao-geral": "Visão geral — divergências",
+    "acompanhamento": "Acompanhamento por pessoa",
+    "usuarios": "Usuários",
+    "grupos": "Grupos",
+    "excel": "Exportar Excel"
+  };
+  document.querySelectorAll(".nav-item[data-secao]").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.preventDefault();
+      const alvo = item.dataset.secao;
+      document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
+      document.getElementById(`secao-${alvo}`).style.display = "";
+      document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
+      item.classList.add("active");
+      document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
+    });
+  });
+
   const auth = getAuth(app);
   const db = getFirestore(app);
 
