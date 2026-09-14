@@ -155,7 +155,7 @@
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs,
-    onSnapshot, query, where, serverTimestamp
+    onSnapshot, query, where, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -189,6 +189,8 @@
   let grupoAtivo = null;
   let estadoAtivo = "todos";
   let divergenciasCache = [];
+  let solucionadosCache = [];
+  const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
   let gruposCache = []; // [{id, nome, dpto}] — todos os grupos cadastrados pelo admin
 
   // Mantém o mapeamento nome<->dpto sempre atualizado
@@ -249,12 +251,14 @@
     const nFalta = doGrupo.filter(d => d.tipo === "falta").length;
     const nSobra = doGrupo.filter(d => d.tipo === "sobra").length;
     const nSemJust = doGrupo.filter(d => !d.justificativa).length;
+    const nSolucionados = solucionadosCache.filter(d => d.grupo === grupoAtivo).length;
     const wrap = document.getElementById("stateRow");
     wrap.innerHTML = `
       <div class="state-pill all ${estadoAtivo==='todos'?'selected':''}" data-estado="todos">Todos · ${doGrupo.length}</div>
       <div class="state-pill falta ${estadoAtivo==='falta'?'selected':''}" data-estado="falta">Falta · ${nFalta}</div>
       <div class="state-pill sobra ${estadoAtivo==='sobra'?'selected':''}" data-estado="sobra">Sobra · ${nSobra}</div>
       <div class="state-pill ok ${estadoAtivo==='semjust'?'selected':''}" data-estado="semjust">Sem justificativa · ${nSemJust}</div>
+      <div class="state-pill ok ${estadoAtivo==='solucionados'?'selected':''}" data-estado="solucionados">Solucionados · ${nSolucionados}</div>
     `;
     wrap.querySelectorAll(".state-pill").forEach(el => {
       el.addEventListener("click", () => {
@@ -268,6 +272,25 @@
   // ---------- TABELA ----------
   function renderTable() {
     const tbody = document.getElementById("tableBody");
+
+    if (estadoAtivo === "solucionados") {
+      const solRows = solucionadosCache.filter(d => d.grupo === grupoAtivo);
+      if (solRows.length === 0) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum item solucionado ainda nesse grupo</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = solRows.map(d => `
+        <tr>
+          <td class="sku">${d.codigo}</td>
+          <td>${d.descricao || ""}</td>
+          <td><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
+          <td class="qty ${d.tipoAnterior}">${d.quantidadeAnterior}</td>
+          <td style="color:var(--muted);">Valor ajustado: ${(d.valorAjustado || 0).toLocaleString("pt-BR", {style:"currency", currency:"BRL"})}</td>
+          <td class="meta-edit">${formatWhen(d.resolvidoEm)}</td>
+        </tr>`).join("");
+      return;
+    }
+
     let rows = divergenciasCache.filter(d => d.grupo === grupoAtivo);
     if (estadoAtivo === "falta") rows = rows.filter(d => d.tipo === "falta");
     if (estadoAtivo === "sobra") rows = rows.filter(d => d.tipo === "sobra");
@@ -283,18 +306,23 @@
       const editInfo = d.ultimaEdicaoPor
         ? `${d.ultimaEdicaoPor === meuUsuario.matricula ? "Você" : d.ultimaEdicaoPor} · ${formatWhen(d.ultimaEdicaoEm)}`
         : "—";
+      const congelado = !d.data || d.data !== HOJE_STR;
+      const inputHtml = congelado
+        ? `<input class="just" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
+        : `<input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda">`;
+      const freezeTag = congelado ? `<span class="diff-tag" style="background:rgba(139,151,166,0.15);color:var(--muted);">congelado</span>` : "";
       return `
         <tr>
           <td class="sku">${d.codigo}</td>
-          <td>${d.descricao || ""} ${diffTag}</td>
+          <td>${d.descricao || ""} ${diffTag}${freezeTag}</td>
           <td><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipo}">${d.quantidade}</td>
-          <td><input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda"></td>
+          <td>${inputHtml}</td>
           <td class="meta-edit">${editInfo}</td>
         </tr>`;
     }).join("");
 
-    tbody.querySelectorAll("input.just").forEach(inp => {
+    tbody.querySelectorAll("input.just[data-id]").forEach(inp => {
       inp.addEventListener("change", async () => {
         const id = inp.dataset.id;
         await setDoc(doc(db, "div_divergencias", id), {
@@ -320,6 +348,13 @@
     onSnapshot(q, (snap) => {
       divergenciasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderGroupTabs();
+      renderStateRow();
+      renderTable();
+    });
+
+    const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposQuery));
+    onSnapshot(qSol, (snap) => {
+      solucionadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderStateRow();
       renderTable();
     });
@@ -378,9 +413,33 @@
       let processados = 0, ignoradosGrupo = 0, dptoNaoCadastrado = 0, novos = 0, mantidos = 0, resolvidos = 0;
       const gruposDoUsuario = meuUsuario.grupos;
       const iInventario = idx("inventario");
+      const iSituacao = idx("situacaoproduto");
+      const iSabium01 = idx("sabium01");
+      const iSabium83 = idx("sabium83");
+      const iEstoqueSenior = idx("estoquesenior");
+      const iARecolher = idx("arecolher");
+      const iMapaCliente = idx("mapacliente");
+      const iTransito = idx("transito");
+      const iReserva = idx("reserva");
+      const iCustoMedio = idx("customedio");
 
       // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
       const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
+
+      // histórico: guarda TODOS os códigos de hoje, com ou sem divergência, pra sempre
+      const hojeHistorico = new Date().toISOString().slice(0, 10);
+      let historicoBatch = writeBatch(db);
+      let historicoNoBatch = 0;
+      const commitsHistorico = [];
+      async function gravarHistorico(docRef, dados) {
+        historicoBatch.set(docRef, dados);
+        historicoNoBatch++;
+        if (historicoNoBatch >= 450) {
+          commitsHistorico.push(historicoBatch.commit());
+          historicoBatch = writeBatch(db);
+          historicoNoBatch = 0;
+        }
+      }
 
       for (let i = 1; i < linhas.length; i++) {
         const cols = linhas[i].split(";");
@@ -417,13 +476,46 @@
         totaisPorGrupo[grupoFinal].totalValorSobra += vlrSobra;
         totaisPorGrupo[grupoFinal].totalCodigos += 1;
 
+        // guarda no histórico permanente (todos os códigos, com ou sem divergência)
+        const historicoId = `${hojeHistorico}_${sanitizarId(codigo)}`;
+        await gravarHistorico(doc(db, "div_historico", historicoId), {
+          data: hojeHistorico,
+          codigo, descricao, grupo: grupoFinal,
+          situacaoproduto: iSituacao !== -1 ? (cols[iSituacao] || "").trim() : "",
+          sabium01: iSabium01 !== -1 ? parseNumeroBR(cols[iSabium01]) : 0,
+          sabium83: iSabium83 !== -1 ? parseNumeroBR(cols[iSabium83]) : 0,
+          estoquesenior: iEstoqueSenior !== -1 ? parseNumeroBR(cols[iEstoqueSenior]) : 0,
+          arecolher: iARecolher !== -1 ? parseNumeroBR(cols[iARecolher]) : 0,
+          mapacliente: iMapaCliente !== -1 ? parseNumeroBR(cols[iMapaCliente]) : 0,
+          transito: iTransito !== -1 ? parseNumeroBR(cols[iTransito]) : 0,
+          reserva: iReserva !== -1 ? parseNumeroBR(cols[iReserva]) : 0,
+          falta, sobra,
+          customedio: iCustoMedio !== -1 ? parseNumeroBR(cols[iCustoMedio]) : 0,
+          vlrfalta: vlrFalta, vlrsobra: vlrSobra, inventario,
+          importadoPor: meuUsuario.matricula,
+          importadoEm: serverTimestamp()
+        });
+
         const docId = sanitizarId(codigo);
         const docRef = doc(db, "div_divergencias", docId);
 
         if (falta === 0 && sobra === 0) {
-          // sem divergência hoje — se existia antes, remove (resolvido)
+          // sem divergência hoje — se existia antes, vira "solucionado" (não some sem deixar rastro)
           const existente = await getDoc(docRef);
           if (existente.exists()) {
+            const antigo = existente.data();
+            await setDoc(doc(db, "div_solucionados", `${hojeHistorico}_${docId}`), {
+              data: hojeHistorico,
+              codigo: antigo.codigo || codigo,
+              descricao: antigo.descricao || descricao,
+              grupo: antigo.grupo || grupoFinal,
+              tipoAnterior: antigo.tipo || null,
+              quantidadeAnterior: antigo.quantidade || 0,
+              valorAjustado: antigo.valor || 0,
+              justificativaFinal: antigo.justificativa || "",
+              resolvidoPor: meuUsuario.matricula,
+              resolvidoEm: serverTimestamp()
+            });
             await deleteDoc(docRef);
             resolvidos++;
           }
@@ -441,9 +533,10 @@
           const antigo = existente.data();
           const mesmaQtd = antigo.tipo === tipo && antigo.quantidade === quantidade;
           if (mesmaQtd) {
-            // mantém justificativa, só atualiza metadados de importação
+            // mantém justificativa, só atualiza metadados de importação (e "descongela" pro dia de hoje)
             await setDoc(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+              data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
             }, { merge: true });
             mantidos++;
@@ -451,7 +544,7 @@
             // mudou de quantidade — limpa justificativa, sinaliza
             await setDoc(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
-              justificativa: "", mudouQuantidade: true,
+              justificativa: "", mudouQuantidade: true, data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
             }, { merge: true });
             novos++;
@@ -459,12 +552,18 @@
         } else {
           await setDoc(docRef, {
             codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
-            justificativa: "", mudouQuantidade: false,
+            justificativa: "", mudouQuantidade: false, data: hojeHistorico,
             ultimaImportacaoEm: serverTimestamp()
           });
           novos++;
         }
       }
+
+      // fecha o último lote pendente do histórico
+      if (historicoNoBatch > 0) {
+        commitsHistorico.push(historicoBatch.commit());
+      }
+      await Promise.all(commitsHistorico);
 
       // salva o resumo do dia por grupo (usado nos KPIs do admin)
       const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -482,9 +581,11 @@
         });
       }
 
+      const totalHistorico = Object.values(totaisPorGrupo).reduce((s, t) => s + t.totalCodigos, 0);
+
       statusEl.className = "import-status show ok";
       statusEl.textContent =
-        `Importado: ${processados} divergências (${mantidos} mantidas, ${novos} novas/alteradas, ${resolvidos} resolvidas)` +
+        `Importado: ${processados} divergências (${mantidos} mantidas, ${novos} novas/alteradas, ${resolvidos} resolvidas) · ${totalHistorico} códigos salvos no histórico de hoje` +
         (ignoradosGrupo > 0 ? ` · ${ignoradosGrupo} linhas de outro grupo ignoradas` : "") +
         (dptoNaoCadastrado > 0 ? ` · ${dptoNaoCadastrado} linhas com dpto sem grupo cadastrado (fale com o admin)` : "");
     } catch (err) {
