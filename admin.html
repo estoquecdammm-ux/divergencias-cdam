@@ -66,7 +66,7 @@
   .grupo-detalhe tbody td{padding:6px;}
   .grupo-detalhe .semdiv{color:var(--muted);text-align:center;padding:10px;font-size:12px;}
   .grupo-detalhe h4{font-size:11.5px;color:var(--muted);margin:0 0 6px 0;font-weight:600;text-transform:uppercase;letter-spacing:.3px;}
-  .gc-situacoes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+  .gc-situacoes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
   .gc-sit-item{background:var(--panel-2);border-radius:6px;padding:6px 4px;text-align:center;}
   .gc-sit-item span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;}
   .gc-sit-item b{display:block;font-size:15px;margin:2px 0;}
@@ -523,6 +523,8 @@
       const nReal = divsDoGrupo.filter(d => d.situacao === "real").length;
       const nAnalise = divsDoGrupo.filter(d => d.situacao === "em-analise").length;
       const nInversao = divsDoGrupo.filter(d => d.situacao === "inversao").length;
+      const nResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").length;
+      const valorResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").reduce((s, d) => s + (d.valor || 0), 0);
       const nResolvidos = solDoGrupo.length;
 
       const valorReal = divsDoGrupo.filter(d => d.situacao === "real").reduce((s, d) => s + (d.valor || 0), 0);
@@ -578,7 +580,8 @@
             <div class="gc-sit-item"><span>Real</span><b>${nReal}</b><small>${formatBRL(valorReal)}</small></div>
             <div class="gc-sit-item"><span>Em análise</span><b>${nAnalise}</b><small>${formatBRL(valorAnalise)}</small></div>
             <div class="gc-sit-item"><span>Inversão</span><b>${nInversao}</b><small>${formatBRL(valorInversao)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Resolvidos</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Resolvido (marcado)</span><b>${nResolvidoManual}</b><small>${formatBRL(valorResolvidoManual)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Resolvidos (auto)</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
           </div>
           <div class="grupo-detalhe ${aberto ? 'show' : ''}">
             <h4>Divergências abertas</h4>

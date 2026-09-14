@@ -260,6 +260,7 @@
     const nReal = doGrupo.filter(d => d.situacao === "real").length;
     const nAnalise = doGrupo.filter(d => d.situacao === "em-analise").length;
     const nInversao = doGrupo.filter(d => d.situacao === "inversao").length;
+    const nResolvidoManual = doGrupo.filter(d => d.situacao === "resolvido").length;
     const nSolucionados = solucionadosCache.filter(d => d.grupo === grupoAtivo).length;
     const wrap = document.getElementById("stateRow");
     wrap.innerHTML = `
@@ -270,6 +271,7 @@
       <div class="state-pill ok ${estadoAtivo==='real'?'selected':''}" data-estado="real">Real · ${nReal}</div>
       <div class="state-pill ok ${estadoAtivo==='em-analise'?'selected':''}" data-estado="em-analise">Em análise · ${nAnalise}</div>
       <div class="state-pill ok ${estadoAtivo==='inversao'?'selected':''}" data-estado="inversao">Inversão · ${nInversao}</div>
+      <div class="state-pill ok ${estadoAtivo==='resolvido-manual'?'selected':''}" data-estado="resolvido-manual">Resolvido · ${nResolvidoManual}</div>
       <div class="state-pill ok ${estadoAtivo==='solucionados'?'selected':''}" data-estado="solucionados">Solucionados · ${nSolucionados}</div>
     `;
     wrap.querySelectorAll(".state-pill").forEach(el => {
@@ -311,6 +313,7 @@
     if (estadoAtivo === "real") rows = rows.filter(d => d.situacao === "real");
     if (estadoAtivo === "em-analise") rows = rows.filter(d => d.situacao === "em-analise");
     if (estadoAtivo === "inversao") rows = rows.filter(d => d.situacao === "inversao");
+    if (estadoAtivo === "resolvido-manual") rows = rows.filter(d => d.situacao === "resolvido");
 
     if (rows.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhuma divergência aqui — bom sinal!</td></tr>`;
@@ -321,7 +324,8 @@
       { v: "", l: "— sem classificação —" },
       { v: "real", l: "Real" },
       { v: "em-analise", l: "Em análise" },
-      { v: "inversao", l: "Inversão" }
+      { v: "inversao", l: "Inversão" },
+      { v: "resolvido", l: "Resolvido" }
     ];
 
     tbody.innerHTML = rows.map(d => {
@@ -507,23 +511,43 @@
       const iReserva = idx("reserva");
       const iCustoMedio = idx("customedio");
 
-      // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
-      const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
+      statusEl.textContent = "Buscando dados atuais no banco...";
 
-      // histórico: guarda TODOS os códigos de hoje, com ou sem divergência, pra sempre
-      const hojeHistorico = new Date().toISOString().slice(0, 10);
-      let historicoBatch = writeBatch(db);
-      let historicoNoBatch = 0;
-      const commitsHistorico = [];
-      async function gravarHistorico(docRef, dados) {
-        historicoBatch.set(docRef, dados);
-        historicoNoBatch++;
-        if (historicoNoBatch >= 450) {
-          commitsHistorico.push(historicoBatch.commit());
-          historicoBatch = writeBatch(db);
-          historicoNoBatch = 0;
+      // Busca de UMA VEZ todas as divergências já existentes dos meus grupos (em vez de 1 consulta por linha do CSV)
+      const gruposQuery10 = gruposDoUsuario.slice(0, 10);
+      const divExistentesSnap = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "in", gruposQuery10)));
+      const mapaDivergencias = new Map();
+      divExistentesSnap.docs.forEach(d => mapaDivergencias.set(d.id, d.data()));
+
+      statusEl.textContent = "Processando linhas...";
+
+      // Fila de gravação em lote — evita 1 requisição de rede por linha do CSV
+      let loteAtual = writeBatch(db);
+      let opsNoLote = 0;
+      const commitsPendentes = [];
+      function enfileirarSet(ref, dados, merge) {
+        if (merge) loteAtual.set(ref, dados, { merge: true });
+        else loteAtual.set(ref, dados);
+        opsNoLote++;
+        if (opsNoLote >= 450) {
+          commitsPendentes.push(loteAtual.commit());
+          loteAtual = writeBatch(db);
+          opsNoLote = 0;
         }
       }
+      function enfileirarDelete(ref) {
+        loteAtual.delete(ref);
+        opsNoLote++;
+        if (opsNoLote >= 450) {
+          commitsPendentes.push(loteAtual.commit());
+          loteAtual = writeBatch(db);
+          opsNoLote = 0;
+        }
+      }
+
+      // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
+      const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
+      const hojeHistorico = new Date().toISOString().slice(0, 10);
 
       for (let i = 1; i < linhas.length; i++) {
         const cols = linhas[i].split(";");
@@ -560,9 +584,11 @@
         totaisPorGrupo[grupoFinal].totalValorSobra += vlrSobra;
         totaisPorGrupo[grupoFinal].totalCodigos += 1;
 
+        const docId = sanitizarId(codigo);
+
         // guarda no histórico permanente (todos os códigos, com ou sem divergência)
-        const historicoId = `${hojeHistorico}_${sanitizarId(codigo)}`;
-        await gravarHistorico(doc(db, "div_historico", historicoId), {
+        const historicoId = `${hojeHistorico}_${docId}`;
+        enfileirarSet(doc(db, "div_historico", historicoId), {
           data: hojeHistorico,
           codigo, descricao, grupo: grupoFinal,
           situacaoproduto: iSituacao !== -1 ? (cols[iSituacao] || "").trim() : "",
@@ -580,16 +606,14 @@
           importadoEm: serverTimestamp()
         });
 
-        const docId = sanitizarId(codigo);
         const docRef = doc(db, "div_divergencias", docId);
+        const antigo = mapaDivergencias.get(docId); // undefined se não existir
 
         if (falta === 0 && sobra === 0) {
           // sem divergência hoje — se existia antes, vira "solucionado" (não some sem deixar rastro)
-          const existente = await getDoc(docRef);
-          if (existente.exists()) {
-            const antigo = existente.data();
+          if (antigo) {
             const solId = `${hojeHistorico}_${docId}`;
-            await setDoc(doc(db, "div_solucionados", solId), {
+            enfileirarSet(doc(db, "div_solucionados", solId), {
               data: hojeHistorico,
               codigo: antigo.codigo || codigo,
               descricao: antigo.descricao || descricao,
@@ -601,8 +625,9 @@
               resolvidoPor: meuUsuario.matricula,
               resolvidoEm: serverTimestamp()
             });
-            await deleteDoc(docRef);
+            enfileirarDelete(docRef);
             logSolucionados.push({ solId, divId: docId, divAntes: antigo });
+            mapaDivergencias.delete(docId);
             resolvidos++;
           }
           continue;
@@ -612,45 +637,43 @@
         const quantidade = falta !== 0 ? falta : sobra;
         const valor = falta !== 0 ? vlrFalta : vlrSobra;
 
-        const existente = await getDoc(docRef);
         processados++;
-        logDivergencias.push({ id: docId, antes: existente.exists() ? existente.data() : null });
+        logDivergencias.push({ id: docId, antes: antigo || null });
 
-        if (existente.exists()) {
-          const antigo = existente.data();
+        if (antigo) {
           const mesmaQtd = antigo.tipo === tipo && antigo.quantidade === quantidade;
           if (mesmaQtd) {
-            // mantém justificativa, só atualiza metadados de importação (e "descongela" pro dia de hoje)
-            await setDoc(docRef, {
+            // mantém justificativa e situação, só atualiza metadados de importação (e "descongela" pro dia de hoje)
+            enfileirarSet(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
               data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
-            }, { merge: true });
+            }, true);
             mantidos++;
           } else {
             // mudou de quantidade — limpa justificativa, sinaliza
-            await setDoc(docRef, {
+            enfileirarSet(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
               justificativa: "", mudouQuantidade: true, data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
-            }, { merge: true });
+            }, true);
             novos++;
           }
         } else {
-          await setDoc(docRef, {
+          enfileirarSet(docRef, {
             codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
             justificativa: "", mudouQuantidade: false, data: hojeHistorico,
             ultimaImportacaoEm: serverTimestamp()
-          });
+          }, false);
           novos++;
         }
+        mapaDivergencias.set(docId, { codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor });
       }
 
-      // fecha o último lote pendente do histórico
-      if (historicoNoBatch > 0) {
-        commitsHistorico.push(historicoBatch.commit());
-      }
-      await Promise.all(commitsHistorico);
+      // fecha o último lote pendente
+      if (opsNoLote > 0) commitsPendentes.push(loteAtual.commit());
+      statusEl.textContent = `Salvando ${commitsPendentes.length > 1 ? "lotes" : "dados"} no banco...`;
+      await Promise.all(commitsPendentes);
 
       // salva o resumo do dia por grupo (usado nos KPIs do admin)
       const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
