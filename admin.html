@@ -46,6 +46,10 @@
   .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
   .kpi .num{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;}
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  .kpi-com-filtro select{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;
+    padding:4px 8px;color:var(--muted);font-size:11px;font-family:inherit;margin-bottom:8px;
+  }
   .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
   .soon-note{font-size:11.5px;color:var(--muted);margin:-6px 0 24px 2px;}
   .grupos-overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
@@ -132,6 +136,8 @@
   </div>
   <a class="nav-item active" href="#" data-secao="visao-geral"><span class="ic">▤</span><span>Visão geral</span></a>
   <a class="nav-item" href="#" data-secao="acompanhamento"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
+  <div class="nav-section">GRUPOS</div>
+  <div id="navGrupos"></div>
   <div class="nav-section">GESTÃO</div>
   <a class="nav-item" href="#" data-secao="usuarios"><span class="ic">👤</span><span>Usuários</span></a>
   <a class="nav-item" href="#" data-secao="grupos"><span class="ic">🏷</span><span>Grupos</span></a>
@@ -156,31 +162,28 @@
       <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
     </div>
 
-    <div style="display:flex;align-items:center;gap:10px;margin:20px 0 10px 0;">
-      <label style="font-size:12.5px;color:var(--muted);">Valores do inventário — filtrar por grupo:</label>
-      <select id="filtroGrupoVisaoGeral" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;font-family:inherit;">
-        <option value="">Todos os grupos</option>
-      </select>
-    </div>
-    <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">
-      <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
+    <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-top:14px;">
+      <div class="kpi kpi-com-filtro">
+        <select id="filtroGrupoVisaoGeral">
+          <option value="">Todos os grupos</option>
+        </select>
+        <div class="num" id="kpiValorInventario">—</div>
+        <div class="lbl">Valor total do inventário (hoje)</div>
+      </div>
       <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
+      <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
     </div>
-    <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data (ou só o grupo selecionado no filtro acima — esse filtro também afeta as caixas de contagem lá em cima).</div>
+    <div class="soon-note">O filtro de grupo (dentro da caixa de inventário) afeta as 4 caixas de valor acima. Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+  </section>
 
-    <h2 style="font-size:15px;margin:26px 0 12px 0;">Resolvidos</h2>
-    <div class="card">
-      <div class="sub" style="margin-bottom:10px;">Itens que zeraram no CSV (resolvidos automaticamente), de todos os grupos — ou só do grupo filtrado acima.</div>
-      <input type="text" id="buscaResolvidosGeral" placeholder="Buscar por código..." style="width:100%;max-width:320px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;margin-bottom:12px;">
-      <table>
-        <thead><tr><th>Grupo</th><th>Código</th><th>Era</th><th>Valor ajustado</th><th>Descrição da resolução</th><th>Quando</th></tr></thead>
-        <tbody id="resolvidosGeralBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
-      </table>
+  <section id="secao-grupo-detalhe" class="secao" style="display:none;">
+    <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:22px;">
+      <div class="kpi falta"><div class="num" id="gdFalta">—</div><div class="lbl">Em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="gdSobra">—</div><div class="lbl">Em sobra</div></div>
+      <div class="kpi"><div class="num" id="gdValorInv">—</div><div class="lbl">Valor do inventário (hoje)</div></div>
     </div>
-
-    <h2 style="font-size:15px;margin:26px 0 12px 0;">Por grupo</h2>
-    <div id="gruposOverview" class="grupos-overview"></div>
+    <div id="gdTabelas"></div>
   </section>
 
   <section id="secao-acompanhamento" class="secao" style="display:none;">
@@ -324,7 +327,7 @@
     if (e.target && e.target.id === "filtroGrupoVisaoGeral") renderDashboard();
   });
 
-  // ---------- NAVEGAÇÃO ENTRE SEÇÕES ----------
+  // ---------- NAVEGAÇÃO ENTRE SEÇÕES (delegado, funciona com itens de grupo criados depois) ----------
   const titulos = {
     "visao-geral": "Visão geral — divergências",
     "acompanhamento": "Acompanhamento por pessoa",
@@ -332,17 +335,26 @@
     "grupos": "Grupos",
     "excel": "Exportar Excel"
   };
-  document.querySelectorAll(".nav-item[data-secao]").forEach(item => {
-    item.addEventListener("click", (e) => {
-      e.preventDefault();
-      const alvo = item.dataset.secao;
-      document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
-      document.getElementById(`secao-${alvo}`).style.display = "";
-      document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
-      item.classList.add("active");
+  document.querySelector("nav.side").addEventListener("click", (e) => {
+    const item = e.target.closest(".nav-item[data-secao]");
+    if (!item) return;
+    e.preventDefault();
+    const alvo = item.dataset.secao;
+    document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
+    document.getElementById(`secao-${alvo}`).style.display = "";
+    document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
+    item.classList.add("active");
+
+    if (alvo === "grupo-detalhe") {
+      grupoDetalheAtivo = item.dataset.grupoNome;
+      document.getElementById("tituloSecao").textContent = grupoDetalheAtivo;
+      renderGrupoDetalhe(grupoDetalheAtivo);
+    } else {
+      grupoDetalheAtivo = null;
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
-    });
+    }
   });
+
 
   const auth = getAuth(app);
   setPersistence(auth, browserSessionPersistence); // login por aba, não compartilhado entre abas
@@ -382,6 +394,7 @@
         <td><button class="btn-del" data-tipo="grupo" data-id="${g.id}">Excluir</button></td></tr>`).join("");
     }
     renderChecksGrupos();
+    renderNavGrupos();
     renderDashboard();
   });
 
@@ -456,31 +469,33 @@
     }
     const grupoFiltro = filtroSel ? filtroSel.value : "";
 
-    // KPIs de quantidade (filtrados pelo grupo escolhido, ou todos)
-    const divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
-    const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
-    const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
-    const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
-    const nComJust = divsFiltradas.filter(d => d.justificativa).length;
+    // KPIs de quantidade — sempre globais (a página inicial agora só mostra o total geral)
+    const nFalta = divergenciasCache.filter(d => d.tipo === "falta").length;
+    const nSobra = divergenciasCache.filter(d => d.tipo === "sobra").length;
+    const nInversao = divergenciasCache.filter(d => d.situacao === "inversao").length;
+    const nComJust = divergenciasCache.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = grupoFiltro ? 0 : divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    const nSemGrupo = divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
     document.getElementById("kpiFalta").textContent = nFalta;
     document.getElementById("kpiSobra").textContent = nSobra;
     document.getElementById("kpiInversao").textContent = nInversao;
     document.getElementById("kpiComJustificativa").textContent = nComJust;
     document.getElementById("kpiSemGrupo").textContent = nSemGrupo;
 
-    // KPIs de R$ (soma dos grupos que já importaram hoje, ou só o grupo filtrado)
+    // KPIs de R$ — esses sim respeitam o filtro de grupo (que fica dentro da caixa de inventário)
     const resumosFiltrados = grupoFiltro ? resumoHojeCache.filter(r => r.grupo === grupoFiltro) : resumoHojeCache;
     const totalInv = resumosFiltrados.reduce((s, r) => s + (r.totalInventario || 0), 0);
     const totalVF = resumosFiltrados.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
     const totalVS = resumosFiltrados.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    const solucionadosFiltrados = grupoFiltro ? solucionadosCache.filter(d => d.grupo === grupoFiltro) : solucionadosCache;
+    const totalResolvido = solucionadosFiltrados.reduce((s, d) => s + (d.valorAjustado || 0), 0);
     document.getElementById("kpiValorInventario").textContent = formatBRL(totalInv);
     document.getElementById("kpiValorFalta").textContent = formatBRL(totalVF);
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
+    document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
 
-    renderGruposOverview();
-    renderResolvidosGeral(grupoFiltro);
+    renderNavGrupos();
+    if (grupoDetalheAtivo) renderGrupoDetalhe(grupoDetalheAtivo);
 
     // Acompanhamento por pessoa
     const tbody = document.getElementById("acompanhamentoBody");
@@ -544,155 +559,64 @@
     }).join("");
   }
 
-  const gruposAbertos = new Set();
+  // ---------- BARRA LATERAL DE GRUPOS (dinâmica) ----------
+  let grupoDetalheAtivo = null;
 
-  function renderGruposOverview() {
-    const wrap = document.getElementById("gruposOverview");
+  function renderNavGrupos() {
+    const wrap = document.getElementById("navGrupos");
     if (!wrap) return;
-    if (gruposCache.length === 0) {
-      wrap.innerHTML = `<div style="color:var(--muted);font-size:13px;">Nenhum grupo cadastrado ainda.</div>`;
-      return;
-    }
-    wrap.innerHTML = gruposCache.map(g => {
-      const divsDoGrupo = divergenciasCache.filter(d => d.grupo === g.nome);
-      const solDoGrupo = solucionadosCache.filter(d => d.grupo === g.nome);
+    wrap.innerHTML = gruposCache.map(g => `
+      <a class="nav-item ${grupoDetalheAtivo === g.nome ? 'active' : ''}" href="#" data-secao="grupo-detalhe" data-grupo-nome="${g.nome}">
+        <span class="ic">▫</span><span>${g.nome}</span>
+      </a>`).join("");
+  }
 
-      const nFalta = divsDoGrupo.filter(d => d.tipo === "falta").length;
-      const nSobra = divsDoGrupo.filter(d => d.tipo === "sobra").length;
-      const nReal = divsDoGrupo.filter(d => d.situacao === "real").length;
-      const nAnalise = divsDoGrupo.filter(d => d.situacao === "em-analise").length;
-      const nInversao = divsDoGrupo.filter(d => d.situacao === "inversao").length;
-      const nResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").length;
-      const valorResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").reduce((s, d) => s + (d.valor || 0), 0);
-      const nResolvidoParcial = divsDoGrupo.filter(d => d.situacao === "resolvido-parcial").length;
-      const valorResolvidoParcial = divsDoGrupo.filter(d => d.situacao === "resolvido-parcial").reduce((s, d) => s + (d.valor || 0), 0);
-      const nResolvidos = solDoGrupo.length;
+  const CATEGORIAS_GRUPO = [
+    { titulo: "Falta", filtro: d => d.tipo === "falta" },
+    { titulo: "Sobra", filtro: d => d.tipo === "sobra" },
+    { titulo: "Em análise", filtro: d => d.situacao === "em-analise" },
+    { titulo: "Resolvido Parcial", filtro: d => d.situacao === "resolvido-parcial" },
+    { titulo: "Inversão", filtro: d => d.situacao === "inversao" },
+    { titulo: "Resolvido", filtro: d => d.situacao === "resolvido" }
+  ];
 
-      const valorReal = divsDoGrupo.filter(d => d.situacao === "real").reduce((s, d) => s + (d.valor || 0), 0);
-      const valorAnalise = divsDoGrupo.filter(d => d.situacao === "em-analise").reduce((s, d) => s + (d.valor || 0), 0);
-      const valorInversao = divsDoGrupo.filter(d => d.situacao === "inversao").reduce((s, d) => s + (d.valor || 0), 0);
-      const valorResolvidos = solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0);
+  function renderGrupoDetalhe(nomeGrupo) {
+    if (!nomeGrupo) return;
+    const divsDoGrupo = divergenciasCache.filter(d => d.grupo === nomeGrupo);
+    const nFalta = divsDoGrupo.filter(d => d.tipo === "falta").length;
+    const nSobra = divsDoGrupo.filter(d => d.tipo === "sobra").length;
+    const resumo = resumoHojeCache.find(r => r.grupo === nomeGrupo);
 
-      const resumo = resumoHojeCache.find(r => r.grupo === g.nome);
-      const valorInv = resumo ? formatBRL(resumo.totalInventario) : "—";
-      const aberto = gruposAbertos.has(g.id);
+    document.getElementById("gdFalta").textContent = nFalta;
+    document.getElementById("gdSobra").textContent = nSobra;
+    document.getElementById("gdValorInv").textContent = resumo ? formatBRL(resumo.totalInventario) : "—";
 
-      const linhasDetalheDivergencias = divsDoGrupo.length === 0
-        ? `<div class="semdiv">Nenhuma divergência aberta nesse grupo</div>`
-        : `<input type="text" class="busca-grupo-codigo" data-grupo-id="${g.id}" placeholder="Buscar código..." onclick="event.stopPropagation()"
-                 style="width:100%;max-width:260px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px;font-family:inherit;margin-bottom:8px;">
-           <table>
-             <thead><tr><th>Código</th><th>Tipo</th><th>Qtd</th><th>Situação</th><th>Justificativa</th></tr></thead>
-             <tbody>
-               ${divsDoGrupo.map(d => `
-                 <tr data-codigo="${(d.codigo || '').toLowerCase()}">
-                   <td>${d.codigo}</td>
-                   <td><span class="badge ${d.tipo === 'falta' ? 'falta' : 'sobra'}" style="background:${d.tipo === 'falta' ? 'var(--falta-bg)' : 'var(--sobra-bg)'};color:${d.tipo === 'falta' ? '#e08979' : '#8ec1e6'};padding:2px 7px;border-radius:4px;font-size:10.5px;">${d.tipo === 'falta' ? 'Falta' : 'Sobra'}</span></td>
-                   <td>${d.quantidade}</td>
-                   <td style="color:var(--muted);">${d.situacao ? ({real:"Real", "em-analise":"Em análise", inversao:"Inversão"}[d.situacao] || d.situacao) : "—"}</td>
-                   <td style="color:${d.justificativa ? 'var(--muted)' : 'var(--accent)'};">${d.justificativa || 'sem justificativa'}</td>
-                 </tr>`).join("")}
-             </tbody>
-           </table>`;
-
-      const linhasResolvidos = solDoGrupo.length === 0
-        ? `<div class="semdiv">Nenhum item resolvido ainda nesse grupo</div>`
+    const wrap = document.getElementById("gdTabelas");
+    wrap.innerHTML = CATEGORIAS_GRUPO.map(cat => {
+      const linhas = divsDoGrupo.filter(cat.filtro);
+      const corpo = linhas.length === 0
+        ? `<div class="semdiv">Nenhum item aqui</div>`
         : `<table>
-             <thead><tr><th>Código</th><th>Era</th><th>Valor ajustado</th><th>Quando</th></tr></thead>
+             <thead><tr><th style="width:130px;">Código</th><th>Descrição</th><th style="width:70px;">Qtd</th><th>Justificativa</th><th style="width:130px;">Última edição</th></tr></thead>
              <tbody>
-               ${solDoGrupo.map(d => `
+               ${linhas.map(d => `
                  <tr>
-                   <td>${d.codigo}</td>
-                   <td>${d.tipoAnterior === "falta" ? "Falta" : "Sobra"} (${d.quantidadeAnterior})</td>
-                   <td>${formatBRL(d.valorAjustado)}</td>
-                   <td style="color:var(--muted);font-size:11px;">${d.resolvidoEm?.toDate ? d.resolvidoEm.toDate().toLocaleDateString("pt-BR") : "—"}</td>
+                   <td class="sku">${d.codigo}</td>
+                   <td>${d.descricao || ""}</td>
+                   <td class="qty ${d.tipo}">${d.quantidade}</td>
+                   <td style="color:${d.justificativa ? 'var(--text)' : 'var(--accent)'};white-space:normal;line-height:1.4;">${d.justificativa || 'sem justificativa'}</td>
+                   <td style="color:var(--muted);font-size:11px;">${d.ultimaEdicaoPor ? `${d.ultimaEdicaoPor}<br>${d.ultimaEdicaoEm?.toDate ? d.ultimaEdicaoEm.toDate().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}` : "—"}</td>
                  </tr>`).join("")}
              </tbody>
            </table>`;
-
       return `
-        <div class="grupo-card ${aberto ? 'aberto' : ''}" data-id="${g.id}">
-          <div class="gc-head">
-            <div class="gc-nome">${g.nome}</div>
-            <div class="gc-seta">▶</div>
-          </div>
-          <div class="gc-linha falta"><span>Em falta</span><b>${nFalta}</b></div>
-          <div class="gc-linha sobra"><span>Em sobra</span><b>${nSobra}</b></div>
-          <div class="gc-linha"><span>Valor do inventário (hoje)</span><b>${valorInv}</b></div>
-          <div class="gc-situacoes">
-            <div class="gc-sit-item"><span>Real</span><b>${nReal}</b><small>${formatBRL(valorReal)}</small></div>
-            <div class="gc-sit-item"><span>Em análise</span><b>${nAnalise}</b><small>${formatBRL(valorAnalise)}</small></div>
-            <div class="gc-sit-item"><span>Inversão</span><b>${nInversao}</b><small>${formatBRL(valorInversao)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Resolvido</span><b>${nResolvidoManual}</b><small>${formatBRL(valorResolvidoManual)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Res. Parcial</span><b>${nResolvidoParcial}</b><small>${formatBRL(valorResolvidoParcial)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Resolv. (auto)</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
-          </div>
-          <div class="grupo-detalhe ${aberto ? 'show' : ''}">
-            <h4>Divergências abertas</h4>
-            ${linhasDetalheDivergencias}
-            <h4 style="margin-top:14px;">Resolvidos</h4>
-            ${linhasResolvidos}
-          </div>
+        <div class="card" style="margin-bottom:18px;">
+          <h2 style="display:flex;justify-content:space-between;">${cat.titulo} <span style="color:var(--muted);font-size:12px;font-weight:500;">${linhas.length} item(ns)</span></h2>
+          ${corpo}
         </div>`;
     }).join("");
-
-    wrap.querySelectorAll(".grupo-card").forEach(card => {
-      card.addEventListener("click", () => {
-        const id = card.dataset.id;
-        if (gruposAbertos.has(id)) gruposAbertos.delete(id); else gruposAbertos.add(id);
-        renderGruposOverview();
-      });
-    });
   }
 
-  function renderResolvidosGeral(grupoFiltro) {
-    const tbody = document.getElementById("resolvidosGeralBody");
-    if (!tbody) return;
-    let lista = grupoFiltro ? solucionadosCache.filter(d => d.grupo === grupoFiltro) : solucionadosCache;
-    lista = [...lista].sort((a, b) => (b.resolvidoEm?.toMillis?.() || 0) - (a.resolvidoEm?.toMillis?.() || 0));
-
-    if (lista.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum item resolvido ainda</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = lista.map(d => `
-      <tr data-codigo="${(d.codigo || "").toLowerCase()}">
-        <td>${d.grupo}</td>
-        <td>${d.codigo}</td>
-        <td>${d.tipoAnterior === "falta" ? "Falta" : "Sobra"} (${d.quantidadeAnterior})</td>
-        <td>${formatBRL(d.valorAjustado)}</td>
-        <td style="color:${d.justificativaFinal ? 'var(--muted)' : 'var(--accent)'};">${d.justificativaFinal || "sem descrição"}</td>
-        <td style="color:var(--muted);font-size:11px;">${d.resolvidoEm?.toDate ? d.resolvidoEm.toDate().toLocaleDateString("pt-BR") : "—"}</td>
-      </tr>`).join("");
-
-    aplicarBuscaResolvidosGeral();
-  }
-
-  function aplicarBuscaResolvidosGeral() {
-    const input = document.getElementById("buscaResolvidosGeral");
-    if (!input) return;
-    const termo = input.value.trim().toLowerCase();
-    document.querySelectorAll("#resolvidosGeralBody tr[data-codigo]").forEach(tr => {
-      tr.style.display = !termo || tr.dataset.codigo.includes(termo) ? "" : "none";
-    });
-  }
-
-  function aplicarBuscaGrupoCodigo(grupoId) {
-    const input = document.querySelector(`.busca-grupo-codigo[data-grupo-id="${grupoId}"]`);
-    const card = document.querySelector(`.grupo-card[data-id="${grupoId}"]`);
-    if (!input || !card) return;
-    const termo = input.value.trim().toLowerCase();
-    card.querySelectorAll("tbody tr[data-codigo]").forEach(tr => {
-      tr.style.display = !termo || tr.dataset.codigo.includes(termo) ? "" : "none";
-    });
-  }
-
-  document.addEventListener("input", (e) => {
-    if (e.target && e.target.id === "buscaResolvidosGeral") aplicarBuscaResolvidosGeral();
-    if (e.target && e.target.classList && e.target.classList.contains("busca-grupo-codigo")) {
-      aplicarBuscaGrupoCodigo(e.target.dataset.grupoId);
-    }
-  });
 
   // ---------- MODAL: novo grupo ----------
   const modalGrupo = document.getElementById("modalGrupo");
