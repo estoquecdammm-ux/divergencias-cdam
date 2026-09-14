@@ -41,11 +41,14 @@
   .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
   .dropzone{border:1.5px dashed var(--border);border-radius:8px;padding:22px;text-align:center;color:var(--muted);font-size:13px;background:var(--panel-2);cursor:pointer;}
   .dropzone:hover{border-color:var(--accent);}
+  .dropzone.dragover{border-color:var(--accent);background:rgba(232,163,61,0.08);color:var(--text);}
   .dropzone .accent{color:var(--accent);font-weight:600;}
   .import-status{font-size:12.5px;margin-top:10px;display:none;}
   .import-status.show{display:block;}
   .import-status.ok{color:#8fd6ab;}
   .import-status.err{color:#e08979;}
+  .btn-del{background:none;border:1px solid var(--falta);color:#e08979;border-radius:5px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .btn-del:hover{background:var(--falta-bg);}
 
   .group-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
   .gtab{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;background:var(--panel);border:1px solid var(--border);color:var(--muted);cursor:pointer;}
@@ -109,9 +112,11 @@
     <div class="card">
       <h2>Importar CSV do dia</h2>
       <div class="sub">Suba o export do WISWEB já filtrado pelo(s) seu(s) grupo(s) — só esses SKUs são atualizados.</div>
-      <div class="dropzone" id="dropzone">Clique pra escolher o CSV do WISWEB de hoje</div>
-      <input type="file" id="fileInput" accept=".csv" style="display:none;">
+      <div class="dropzone" id="dropzone">Arraste um ou mais CSVs do WISWEB aqui, ou clique pra escolher</div>
+      <input type="file" id="fileInput" accept=".csv" multiple style="display:none;">
       <div class="import-status" id="importStatus"></div>
+      <div class="import-status err" id="avisoGrupoErrado" style="display:none;font-weight:600;"></div>
+      <button class="btn-del" id="btnDesfazerImport" style="display:none;margin-top:10px;">Desfazer essa importação</button>
     </div>
 
     <div class="group-tabs" id="groupTabs"></div>
@@ -122,15 +127,16 @@
       <table>
         <thead>
           <tr>
-            <th style="width:120px;">Código</th>
+            <th style="width:110px;">Código</th>
             <th>Descrição</th>
-            <th style="width:80px;">Tipo</th>
-            <th style="width:90px;">Qtd</th>
-            <th style="width:320px;">Justificativa</th>
-            <th style="width:110px;">Última edição</th>
+            <th style="width:75px;">Tipo</th>
+            <th style="width:80px;">Qtd</th>
+            <th style="width:120px;">Situação</th>
+            <th style="width:260px;">Justificativa</th>
+            <th style="width:105px;">Última edição</th>
           </tr>
         </thead>
-        <tbody id="tableBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+        <tbody id="tableBody"><tr class="empty-row"><td colspan="7">Carregando...</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -251,6 +257,9 @@
     const nFalta = doGrupo.filter(d => d.tipo === "falta").length;
     const nSobra = doGrupo.filter(d => d.tipo === "sobra").length;
     const nSemJust = doGrupo.filter(d => !d.justificativa).length;
+    const nReal = doGrupo.filter(d => d.situacao === "real").length;
+    const nAnalise = doGrupo.filter(d => d.situacao === "em-analise").length;
+    const nInversao = doGrupo.filter(d => d.situacao === "inversao").length;
     const nSolucionados = solucionadosCache.filter(d => d.grupo === grupoAtivo).length;
     const wrap = document.getElementById("stateRow");
     wrap.innerHTML = `
@@ -258,6 +267,9 @@
       <div class="state-pill falta ${estadoAtivo==='falta'?'selected':''}" data-estado="falta">Falta · ${nFalta}</div>
       <div class="state-pill sobra ${estadoAtivo==='sobra'?'selected':''}" data-estado="sobra">Sobra · ${nSobra}</div>
       <div class="state-pill ok ${estadoAtivo==='semjust'?'selected':''}" data-estado="semjust">Sem justificativa · ${nSemJust}</div>
+      <div class="state-pill ok ${estadoAtivo==='real'?'selected':''}" data-estado="real">Real · ${nReal}</div>
+      <div class="state-pill ok ${estadoAtivo==='em-analise'?'selected':''}" data-estado="em-analise">Em análise · ${nAnalise}</div>
+      <div class="state-pill ok ${estadoAtivo==='inversao'?'selected':''}" data-estado="inversao">Inversão · ${nInversao}</div>
       <div class="state-pill ok ${estadoAtivo==='solucionados'?'selected':''}" data-estado="solucionados">Solucionados · ${nSolucionados}</div>
     `;
     wrap.querySelectorAll(".state-pill").forEach(el => {
@@ -276,7 +288,7 @@
     if (estadoAtivo === "solucionados") {
       const solRows = solucionadosCache.filter(d => d.grupo === grupoAtivo);
       if (solRows.length === 0) {
-        tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum item solucionado ainda nesse grupo</td></tr>`;
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhum item solucionado ainda nesse grupo</td></tr>`;
         return;
       }
       tbody.innerHTML = solRows.map(d => `
@@ -285,6 +297,7 @@
           <td>${d.descricao || ""}</td>
           <td><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipoAnterior}">${d.quantidadeAnterior}</td>
+          <td style="color:var(--ok);font-weight:600;font-size:11.5px;">Resolvido</td>
           <td style="color:var(--muted);">Valor ajustado: ${(d.valorAjustado || 0).toLocaleString("pt-BR", {style:"currency", currency:"BRL"})}</td>
           <td class="meta-edit">${formatWhen(d.resolvidoEm)}</td>
         </tr>`).join("");
@@ -295,11 +308,21 @@
     if (estadoAtivo === "falta") rows = rows.filter(d => d.tipo === "falta");
     if (estadoAtivo === "sobra") rows = rows.filter(d => d.tipo === "sobra");
     if (estadoAtivo === "semjust") rows = rows.filter(d => !d.justificativa);
+    if (estadoAtivo === "real") rows = rows.filter(d => d.situacao === "real");
+    if (estadoAtivo === "em-analise") rows = rows.filter(d => d.situacao === "em-analise");
+    if (estadoAtivo === "inversao") rows = rows.filter(d => d.situacao === "inversao");
 
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhuma divergência aqui — bom sinal!</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhuma divergência aqui — bom sinal!</td></tr>`;
       return;
     }
+
+    const OPCOES_SITUACAO = [
+      { v: "", l: "— sem classificação —" },
+      { v: "real", l: "Real" },
+      { v: "em-analise", l: "Em análise" },
+      { v: "inversao", l: "Inversão" }
+    ];
 
     tbody.innerHTML = rows.map(d => {
       const diffTag = d.mudouQuantidade ? `<span class="diff-tag">mudou de qtd</span>` : "";
@@ -311,16 +334,35 @@
         ? `<input class="just" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
         : `<input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda">`;
       const freezeTag = congelado ? `<span class="diff-tag" style="background:rgba(139,151,166,0.15);color:var(--muted);">congelado</span>` : "";
+      const selectHtml = congelado
+        ? `<select disabled style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--muted);font-size:12px;">
+             <option>${OPCOES_SITUACAO.find(o => o.v === (d.situacao||""))?.l || "—"}</option>
+           </select>`
+        : `<select class="sel-situacao" data-id="${d.id}" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--text);font-size:12px;font-family:inherit;">
+             ${OPCOES_SITUACAO.map(o => `<option value="${o.v}" ${d.situacao === o.v || (!d.situacao && o.v === "") ? "selected" : ""}>${o.l}</option>`).join("")}
+           </select>`;
       return `
         <tr>
           <td class="sku">${d.codigo}</td>
           <td>${d.descricao || ""} ${diffTag}${freezeTag}</td>
           <td><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipo}">${d.quantidade}</td>
+          <td>${selectHtml}</td>
           <td>${inputHtml}</td>
           <td class="meta-edit">${editInfo}</td>
         </tr>`;
     }).join("");
+
+    tbody.querySelectorAll("select.sel-situacao").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        const id = sel.dataset.id;
+        await setDoc(doc(db, "div_divergencias", id), {
+          situacao: sel.value,
+          ultimaEdicaoPor: meuUsuario.matricula,
+          ultimaEdicaoEm: serverTimestamp()
+        }, { merge: true });
+      });
+    });
 
     tbody.querySelectorAll("input.just[data-id]").forEach(inp => {
       inp.addEventListener("change", async () => {
@@ -350,6 +392,10 @@
       renderGroupTabs();
       renderStateRow();
       renderTable();
+    }, (err) => {
+      console.error("Erro carregando divergências:", err);
+      document.getElementById("tableBody").innerHTML =
+        `<tr class="empty-row"><td colspan="7" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
     });
 
     const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposQuery));
@@ -357,20 +403,50 @@
       solucionadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderStateRow();
       renderTable();
-    });
+    }, (err) => console.error("Erro carregando solucionados:", err));
   }
 
-  // ---------- IMPORT CSV ----------
+  // ---------- IMPORT CSV (múltiplos arquivos + arrastar e soltar) ----------
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
   dropzone.addEventListener("click", () => fileInput.click());
 
+  ["dragenter", "dragover"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove("dragover");
+    });
+  });
+  dropzone.addEventListener("drop", (e) => {
+    const arquivos = Array.from(e.dataTransfer.files || []).filter(f => f.name.toLowerCase().endsWith(".csv"));
+    if (arquivos.length > 0) handleFiles(arquivos);
+  });
+
   fileInput.addEventListener("change", async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-    await importarCsv(file);
+    const arquivos = Array.from(fileInput.files || []);
+    if (arquivos.length === 0) return;
+    await handleFiles(arquivos);
     fileInput.value = "";
   });
+
+  async function handleFiles(arquivos) {
+    const statusEl = document.getElementById("importStatus");
+    for (let i = 0; i < arquivos.length; i++) {
+      if (arquivos.length > 1) {
+        statusEl.className = "import-status show";
+        statusEl.textContent = `Importando arquivo ${i + 1} de ${arquivos.length}: ${arquivos[i].name}...`;
+      }
+      await importarCsv(arquivos[i]);
+    }
+  }
 
   function parseNumeroBR(str) {
     if (str === undefined || str === null || str.trim() === "") return 0;
@@ -383,8 +459,16 @@
 
   async function importarCsv(file) {
     const statusEl = document.getElementById("importStatus");
+    const avisoEl = document.getElementById("avisoGrupoErrado");
+    avisoEl.style.display = "none";
+    document.getElementById("btnDesfazerImport").style.display = "none";
     statusEl.className = "import-status show";
     statusEl.textContent = "Lendo arquivo...";
+
+    // pra permitir desfazer: guarda o estado ANTERIOR de tudo que essa importação for tocar
+    const logDivergencias = []; // { id, antes: dadosAntigos|null }
+    const logSolucionados = []; // { solId, divId, divAntes: dadosAntigos }
+    const resumoAntes = {}; // { grupoId: dadosAntigos|null }
 
     try {
       const text = await file.text();
@@ -504,7 +588,8 @@
           const existente = await getDoc(docRef);
           if (existente.exists()) {
             const antigo = existente.data();
-            await setDoc(doc(db, "div_solucionados", `${hojeHistorico}_${docId}`), {
+            const solId = `${hojeHistorico}_${docId}`;
+            await setDoc(doc(db, "div_solucionados", solId), {
               data: hojeHistorico,
               codigo: antigo.codigo || codigo,
               descricao: antigo.descricao || descricao,
@@ -517,6 +602,7 @@
               resolvidoEm: serverTimestamp()
             });
             await deleteDoc(docRef);
+            logSolucionados.push({ solId, divId: docId, divAntes: antigo });
             resolvidos++;
           }
           continue;
@@ -528,6 +614,7 @@
 
         const existente = await getDoc(docRef);
         processados++;
+        logDivergencias.push({ id: docId, antes: existente.exists() ? existente.data() : null });
 
         if (existente.exists()) {
           const antigo = existente.data();
@@ -569,7 +656,10 @@
       const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
       for (const [nomeGrupo, totais] of Object.entries(totaisPorGrupo)) {
         const grupoId = nomeGrupo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-");
-        await setDoc(doc(db, "div_resumo_diario", `${hoje}_${grupoId}`), {
+        const resumoId = `${hoje}_${grupoId}`;
+        const resumoRefAntes = await getDoc(doc(db, "div_resumo_diario", resumoId));
+        resumoAntes[resumoId] = resumoRefAntes.exists() ? resumoRefAntes.data() : null;
+        await setDoc(doc(db, "div_resumo_diario", resumoId), {
           data: hoje,
           grupo: nomeGrupo,
           totalInventario: totais.totalInventario,
@@ -582,18 +672,73 @@
       }
 
       const totalHistorico = Object.values(totaisPorGrupo).reduce((s, t) => s + t.totalCodigos, 0);
+      const totalLinhasComGrupo = linhas.length - 1; // total de linhas de dados no CSV
+      const totalIgnoradas = ignoradosGrupo + dptoNaoCadastrado;
+
+      // Aviso bem visível: se NADA do CSV bateu com os grupos do usuário, provavelmente é o arquivo errado
+      if (totalHistorico === 0 && totalIgnoradas > 0) {
+        avisoEl.style.display = "block";
+        avisoEl.textContent =
+          `⚠ Esse CSV não parece ser do seu grupo (${meuUsuario.grupos.join(", ")}) — nenhuma das ${totalIgnoradas} linhas bateu. Confira se subiu o arquivo certo.`;
+      }
 
       statusEl.className = "import-status show ok";
       statusEl.textContent =
         `Importado: ${processados} divergências (${mantidos} mantidas, ${novos} novas/alteradas, ${resolvidos} resolvidas) · ${totalHistorico} códigos salvos no histórico de hoje` +
         (ignoradosGrupo > 0 ? ` · ${ignoradosGrupo} linhas de outro grupo ignoradas` : "") +
         (dptoNaoCadastrado > 0 ? ` · ${dptoNaoCadastrado} linhas com dpto sem grupo cadastrado (fale com o admin)` : "");
+
+      // guarda o log dessa importação pra permitir desfazer, e mostra o botão se algo foi de fato alterado
+      if (logDivergencias.length > 0 || logSolucionados.length > 0 || Object.keys(resumoAntes).length > 0) {
+        ultimoImportLog = { logDivergencias, logSolucionados, resumoAntes };
+        document.getElementById("btnDesfazerImport").style.display = "inline-block";
+      }
     } catch (err) {
       console.error(err);
       statusEl.className = "import-status show err";
       statusEl.textContent = "Erro ao importar: " + err.message;
     }
   }
+
+  // ---------- DESFAZER ÚLTIMA IMPORTAÇÃO ----------
+  let ultimoImportLog = null;
+  document.getElementById("btnDesfazerImport").addEventListener("click", async () => {
+    if (!ultimoImportLog) return;
+    if (!confirm("Desfazer a última importação? Isso volta as divergências, solucionados e resumo do dia pro estado de antes desse upload.")) return;
+
+    const btn = document.getElementById("btnDesfazerImport");
+    btn.disabled = true;
+    btn.textContent = "Desfazendo...";
+
+    try {
+      const { logDivergencias, logSolucionados, resumoAntes } = ultimoImportLog;
+
+      for (const item of logDivergencias) {
+        const ref = doc(db, "div_divergencias", item.id);
+        if (item.antes === null) await deleteDoc(ref);
+        else await setDoc(ref, item.antes);
+      }
+      for (const item of logSolucionados) {
+        await deleteDoc(doc(db, "div_solucionados", item.solId));
+        await setDoc(doc(db, "div_divergencias", item.divId), item.divAntes);
+      }
+      for (const [resumoId, dadosAntes] of Object.entries(resumoAntes)) {
+        const ref = doc(db, "div_resumo_diario", resumoId);
+        if (dadosAntes === null) await deleteDoc(ref);
+        else await setDoc(ref, dadosAntes);
+      }
+
+      ultimoImportLog = null;
+      btn.style.display = "none";
+      document.getElementById("importStatus").textContent = "Importação desfeita — voltou pro estado de antes.";
+      document.getElementById("avisoGrupoErrado").style.display = "none";
+    } catch (err) {
+      alert("Erro ao desfazer: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Desfazer essa importação";
+    }
+  });
 </script>
 
 </body>

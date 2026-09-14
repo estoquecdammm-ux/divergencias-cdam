@@ -65,6 +65,13 @@
   .grupo-detalhe thead th{padding:5px 6px;font-size:10px;}
   .grupo-detalhe tbody td{padding:6px;}
   .grupo-detalhe .semdiv{color:var(--muted);text-align:center;padding:10px;font-size:12px;}
+  .grupo-detalhe h4{font-size:11.5px;color:var(--muted);margin:0 0 6px 0;font-weight:600;text-transform:uppercase;letter-spacing:.3px;}
+  .gc-situacoes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+  .gc-sit-item{background:var(--panel-2);border-radius:6px;padding:6px 4px;text-align:center;}
+  .gc-sit-item span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;}
+  .gc-sit-item b{display:block;font-size:15px;margin:2px 0;}
+  .gc-sit-item small{display:block;font-size:9px;color:var(--muted);}
+  .gc-sit-item.resolvido b{color:var(--ok);}
 
   .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:22px;}
   .card h2{font-size:15px;margin:0 0 4px 0;font-weight:600;}
@@ -395,6 +402,13 @@
     renderDashboard();
   });
 
+  // ---------- SOLUCIONADOS: pra caixa de "resolvidos" por grupo ----------
+  let solucionadosCache = [];
+  onSnapshot(collection(db, "div_solucionados"), (snap) => {
+    solucionadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+  });
+
   // ---------- RESUMO DIÁRIO: para os KPIs de R$ e acompanhamento ----------
   const hoje = new Date().toISOString().slice(0, 10);
   let resumoHojeCache = [];
@@ -502,23 +516,51 @@
     }
     wrap.innerHTML = gruposCache.map(g => {
       const divsDoGrupo = divergenciasCache.filter(d => d.grupo === g.nome);
+      const solDoGrupo = solucionadosCache.filter(d => d.grupo === g.nome);
+
       const nFalta = divsDoGrupo.filter(d => d.tipo === "falta").length;
       const nSobra = divsDoGrupo.filter(d => d.tipo === "sobra").length;
+      const nReal = divsDoGrupo.filter(d => d.situacao === "real").length;
+      const nAnalise = divsDoGrupo.filter(d => d.situacao === "em-analise").length;
+      const nInversao = divsDoGrupo.filter(d => d.situacao === "inversao").length;
+      const nResolvidos = solDoGrupo.length;
+
+      const valorReal = divsDoGrupo.filter(d => d.situacao === "real").reduce((s, d) => s + (d.valor || 0), 0);
+      const valorAnalise = divsDoGrupo.filter(d => d.situacao === "em-analise").reduce((s, d) => s + (d.valor || 0), 0);
+      const valorInversao = divsDoGrupo.filter(d => d.situacao === "inversao").reduce((s, d) => s + (d.valor || 0), 0);
+      const valorResolvidos = solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0);
+
       const resumo = resumoHojeCache.find(r => r.grupo === g.nome);
       const valorInv = resumo ? formatBRL(resumo.totalInventario) : "—";
       const aberto = gruposAbertos.has(g.id);
 
-      const linhasDetalhe = divsDoGrupo.length === 0
+      const linhasDetalheDivergencias = divsDoGrupo.length === 0
         ? `<div class="semdiv">Nenhuma divergência aberta nesse grupo</div>`
         : `<table>
-             <thead><tr><th>Código</th><th>Tipo</th><th>Qtd</th><th>Justificativa</th></tr></thead>
+             <thead><tr><th>Código</th><th>Tipo</th><th>Qtd</th><th>Situação</th><th>Justificativa</th></tr></thead>
              <tbody>
                ${divsDoGrupo.map(d => `
                  <tr>
                    <td>${d.codigo}</td>
                    <td><span class="badge ${d.tipo === 'falta' ? 'falta' : 'sobra'}" style="background:${d.tipo === 'falta' ? 'var(--falta-bg)' : 'var(--sobra-bg)'};color:${d.tipo === 'falta' ? '#e08979' : '#8ec1e6'};padding:2px 7px;border-radius:4px;font-size:10.5px;">${d.tipo === 'falta' ? 'Falta' : 'Sobra'}</span></td>
                    <td>${d.quantidade}</td>
+                   <td style="color:var(--muted);">${d.situacao ? ({real:"Real", "em-analise":"Em análise", inversao:"Inversão"}[d.situacao] || d.situacao) : "—"}</td>
                    <td style="color:${d.justificativa ? 'var(--muted)' : 'var(--accent)'};">${d.justificativa || 'sem justificativa'}</td>
+                 </tr>`).join("")}
+             </tbody>
+           </table>`;
+
+      const linhasResolvidos = solDoGrupo.length === 0
+        ? `<div class="semdiv">Nenhum item resolvido ainda nesse grupo</div>`
+        : `<table>
+             <thead><tr><th>Código</th><th>Era</th><th>Valor ajustado</th><th>Quando</th></tr></thead>
+             <tbody>
+               ${solDoGrupo.map(d => `
+                 <tr>
+                   <td>${d.codigo}</td>
+                   <td>${d.tipoAnterior === "falta" ? "Falta" : "Sobra"} (${d.quantidadeAnterior})</td>
+                   <td>${formatBRL(d.valorAjustado)}</td>
+                   <td style="color:var(--muted);font-size:11px;">${d.resolvidoEm?.toDate ? d.resolvidoEm.toDate().toLocaleDateString("pt-BR") : "—"}</td>
                  </tr>`).join("")}
              </tbody>
            </table>`;
@@ -532,7 +574,18 @@
           <div class="gc-linha falta"><span>Em falta</span><b>${nFalta}</b></div>
           <div class="gc-linha sobra"><span>Em sobra</span><b>${nSobra}</b></div>
           <div class="gc-linha"><span>Valor do inventário (hoje)</span><b>${valorInv}</b></div>
-          <div class="grupo-detalhe ${aberto ? 'show' : ''}">${linhasDetalhe}</div>
+          <div class="gc-situacoes">
+            <div class="gc-sit-item"><span>Real</span><b>${nReal}</b><small>${formatBRL(valorReal)}</small></div>
+            <div class="gc-sit-item"><span>Em análise</span><b>${nAnalise}</b><small>${formatBRL(valorAnalise)}</small></div>
+            <div class="gc-sit-item"><span>Inversão</span><b>${nInversao}</b><small>${formatBRL(valorInversao)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Resolvidos</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
+          </div>
+          <div class="grupo-detalhe ${aberto ? 'show' : ''}">
+            <h4>Divergências abertas</h4>
+            ${linhasDetalheDivergencias}
+            <h4 style="margin-top:14px;">Resolvidos</h4>
+            ${linhasResolvidos}
+          </div>
         </div>`;
     }).join("");
 
