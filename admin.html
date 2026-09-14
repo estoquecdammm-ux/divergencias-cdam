@@ -48,6 +48,23 @@
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
   .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
   .soon-note{font-size:11.5px;color:var(--muted);margin:-6px 0 24px 2px;}
+  .grupos-overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+  .grupo-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;cursor:pointer;}
+  .grupo-card:hover{border-color:var(--accent);}
+  .grupo-card .gc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .grupo-card .gc-nome{font-weight:600;font-size:14px;}
+  .grupo-card .gc-seta{color:var(--muted);font-size:12px;transition:transform .15s;}
+  .grupo-card.aberto .gc-seta{transform:rotate(90deg);}
+  .grupo-card .gc-linha{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:4px;}
+  .grupo-card .gc-linha b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .grupo-card .gc-linha.falta b{color:#e08979;}
+  .grupo-card .gc-linha.sobra b{color:#8ec1e6;}
+  .grupo-detalhe{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+  .grupo-detalhe.show{display:block;}
+  .grupo-detalhe table{font-size:12px;}
+  .grupo-detalhe thead th{padding:5px 6px;font-size:10px;}
+  .grupo-detalhe tbody td{padding:6px;}
+  .grupo-detalhe .semdiv{color:var(--muted);text-align:center;padding:10px;font-size:12px;}
 
   .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:22px;}
   .card h2{font-size:15px;margin:0 0 4px 0;font-weight:600;}
@@ -137,6 +154,9 @@
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
     </div>
     <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+
+    <h2 style="font-size:15px;margin:26px 0 12px 0;">Por grupo</h2>
+    <div id="gruposOverview" class="grupos-overview"></div>
   </section>
 
   <section id="secao-acompanhamento" class="secao" style="display:none;">
@@ -407,6 +427,8 @@
     document.getElementById("kpiValorFalta").textContent = formatBRL(totalVF);
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
 
+    renderGruposOverview();
+
     // Acompanhamento por pessoa
     const tbody = document.getElementById("acompanhamentoBody");
     const estoquistas = usuariosCache.filter(u => (u.grupos || []).length > 0);
@@ -467,6 +489,60 @@
           <td>${statusHtml}</td>
         </tr>`;
     }).join("");
+  }
+
+  const gruposAbertos = new Set();
+
+  function renderGruposOverview() {
+    const wrap = document.getElementById("gruposOverview");
+    if (!wrap) return;
+    if (gruposCache.length === 0) {
+      wrap.innerHTML = `<div style="color:var(--muted);font-size:13px;">Nenhum grupo cadastrado ainda.</div>`;
+      return;
+    }
+    wrap.innerHTML = gruposCache.map(g => {
+      const divsDoGrupo = divergenciasCache.filter(d => d.grupo === g.nome);
+      const nFalta = divsDoGrupo.filter(d => d.tipo === "falta").length;
+      const nSobra = divsDoGrupo.filter(d => d.tipo === "sobra").length;
+      const resumo = resumoHojeCache.find(r => r.grupo === g.nome);
+      const valorInv = resumo ? formatBRL(resumo.totalInventario) : "—";
+      const aberto = gruposAbertos.has(g.id);
+
+      const linhasDetalhe = divsDoGrupo.length === 0
+        ? `<div class="semdiv">Nenhuma divergência aberta nesse grupo</div>`
+        : `<table>
+             <thead><tr><th>Código</th><th>Tipo</th><th>Qtd</th><th>Justificativa</th></tr></thead>
+             <tbody>
+               ${divsDoGrupo.map(d => `
+                 <tr>
+                   <td>${d.codigo}</td>
+                   <td><span class="badge ${d.tipo === 'falta' ? 'falta' : 'sobra'}" style="background:${d.tipo === 'falta' ? 'var(--falta-bg)' : 'var(--sobra-bg)'};color:${d.tipo === 'falta' ? '#e08979' : '#8ec1e6'};padding:2px 7px;border-radius:4px;font-size:10.5px;">${d.tipo === 'falta' ? 'Falta' : 'Sobra'}</span></td>
+                   <td>${d.quantidade}</td>
+                   <td style="color:${d.justificativa ? 'var(--muted)' : 'var(--accent)'};">${d.justificativa || 'sem justificativa'}</td>
+                 </tr>`).join("")}
+             </tbody>
+           </table>`;
+
+      return `
+        <div class="grupo-card ${aberto ? 'aberto' : ''}" data-id="${g.id}">
+          <div class="gc-head">
+            <div class="gc-nome">${g.nome}</div>
+            <div class="gc-seta">▶</div>
+          </div>
+          <div class="gc-linha falta"><span>Em falta</span><b>${nFalta}</b></div>
+          <div class="gc-linha sobra"><span>Em sobra</span><b>${nSobra}</b></div>
+          <div class="gc-linha"><span>Valor do inventário (hoje)</span><b>${valorInv}</b></div>
+          <div class="grupo-detalhe ${aberto ? 'show' : ''}">${linhasDetalhe}</div>
+        </div>`;
+    }).join("");
+
+    wrap.querySelectorAll(".grupo-card").forEach(card => {
+      card.addEventListener("click", () => {
+        const id = card.dataset.id;
+        if (gruposAbertos.has(id)) gruposAbertos.delete(id); else gruposAbertos.add(id);
+        renderGruposOverview();
+      });
+    });
   }
 
   // ---------- MODAL: novo grupo ----------
