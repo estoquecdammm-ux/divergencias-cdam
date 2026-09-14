@@ -48,7 +48,7 @@
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
   .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
   .soon-note{font-size:11.5px;color:var(--muted);margin:-6px 0 24px 2px;}
-  .grupos-overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+  .grupos-overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
   .grupo-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;cursor:pointer;}
   .grupo-card:hover{border-color:var(--accent);}
   .grupo-card .gc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
@@ -66,11 +66,11 @@
   .grupo-detalhe tbody td{padding:6px;}
   .grupo-detalhe .semdiv{color:var(--muted);text-align:center;padding:10px;font-size:12px;}
   .grupo-detalhe h4{font-size:11.5px;color:var(--muted);margin:0 0 6px 0;font-weight:600;text-transform:uppercase;letter-spacing:.3px;}
-  .gc-situacoes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
-  .gc-sit-item{background:var(--panel-2);border-radius:6px;padding:6px 4px;text-align:center;}
-  .gc-sit-item span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;}
-  .gc-sit-item b{display:block;font-size:15px;margin:2px 0;}
-  .gc-sit-item small{display:block;font-size:9px;color:var(--muted);}
+  .gc-situacoes{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+  .gc-sit-item{background:var(--panel-2);border-radius:6px;padding:5px 3px;text-align:center;overflow:hidden;}
+  .gc-sit-item span{display:block;font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gc-sit-item b{display:block;font-size:14px;margin:2px 0;}
+  .gc-sit-item small{display:block;font-size:8.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .gc-sit-item.resolvido b{color:var(--ok);}
 
   .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:22px;}
@@ -148,9 +148,17 @@
   </header>
 
   <section id="secao-visao-geral" class="secao">
-    <div class="kpi-row" id="kpiRowContagem">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <label style="font-size:12.5px;color:var(--muted);">Filtrar por grupo:</label>
+      <select id="filtroGrupoVisaoGeral" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;font-family:inherit;">
+        <option value="">Todos os grupos</option>
+      </select>
+    </div>
+
+    <div class="kpi-row" id="kpiRowContagem" style="grid-template-columns:repeat(5,1fr);">
       <div class="kpi falta"><div class="num" id="kpiFalta">—</div><div class="lbl">Em falta</div></div>
       <div class="kpi sobra"><div class="num" id="kpiSobra">—</div><div class="lbl">Em sobra</div></div>
+      <div class="kpi" style="color:var(--accent);"><div class="num" id="kpiInversao">—</div><div class="lbl">Em inversão</div></div>
       <div class="kpi ok"><div class="num" id="kpiComJustificativa">—</div><div class="lbl">Com justificativa</div></div>
       <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
     </div>
@@ -160,7 +168,7 @@
       <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
     </div>
-    <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+    <div class="soon-note">Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data (ou só o grupo selecionado no filtro acima).</div>
 
     <h2 style="font-size:15px;margin:26px 0 12px 0;">Por grupo</h2>
     <div id="gruposOverview" class="grupos-overview"></div>
@@ -284,7 +292,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut,
-    createUserWithEmailAndPassword, signOut as signOutSecondary
+    createUserWithEmailAndPassword, signOut as signOutSecondary,
+    setPersistence, browserSessionPersistence
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy, where, getDocs, writeBatch
@@ -301,6 +310,10 @@
   const DOMINIO = "divergencias-cdam.app";
 
   const app = initializeApp(firebaseConfig);
+
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.id === "filtroGrupoVisaoGeral") renderDashboard();
+  });
 
   // ---------- NAVEGAÇÃO ENTRE SEÇÕES ----------
   const titulos = {
@@ -323,6 +336,7 @@
   });
 
   const auth = getAuth(app);
+  setPersistence(auth, browserSessionPersistence); // login por aba, não compartilhado entre abas
   const db = getFirestore(app);
 
   // ---------- AUTH GUARD ----------
@@ -422,21 +436,36 @@
   }
 
   function renderDashboard() {
-    // KPIs de quantidade (todas as divergências abertas, de todos os grupos)
-    const nFalta = divergenciasCache.filter(d => d.tipo === "falta").length;
-    const nSobra = divergenciasCache.filter(d => d.tipo === "sobra").length;
-    const nComJust = divergenciasCache.filter(d => d.justificativa).length;
+    // popula o filtro de grupo (só se ainda não tiver as opções certas)
+    const filtroSel = document.getElementById("filtroGrupoVisaoGeral");
+    if (filtroSel && filtroSel.dataset.populado !== String(gruposCache.length)) {
+      const valorAtual = filtroSel.value;
+      filtroSel.innerHTML = `<option value="">Todos os grupos</option>` +
+        gruposCache.map(g => `<option value="${g.nome}">${g.nome}</option>`).join("");
+      filtroSel.value = valorAtual;
+      filtroSel.dataset.populado = String(gruposCache.length);
+    }
+    const grupoFiltro = filtroSel ? filtroSel.value : "";
+
+    // KPIs de quantidade (filtrados pelo grupo escolhido, ou todos)
+    const divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
+    const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
+    const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
+    const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    const nSemGrupo = grupoFiltro ? 0 : divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
     document.getElementById("kpiFalta").textContent = nFalta;
     document.getElementById("kpiSobra").textContent = nSobra;
+    document.getElementById("kpiInversao").textContent = nInversao;
     document.getElementById("kpiComJustificativa").textContent = nComJust;
     document.getElementById("kpiSemGrupo").textContent = nSemGrupo;
 
-    // KPIs de R$ (soma dos grupos que já importaram hoje)
-    const totalInv = resumoHojeCache.reduce((s, r) => s + (r.totalInventario || 0), 0);
-    const totalVF = resumoHojeCache.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
-    const totalVS = resumoHojeCache.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    // KPIs de R$ (soma dos grupos que já importaram hoje, ou só o grupo filtrado)
+    const resumosFiltrados = grupoFiltro ? resumoHojeCache.filter(r => r.grupo === grupoFiltro) : resumoHojeCache;
+    const totalInv = resumosFiltrados.reduce((s, r) => s + (r.totalInventario || 0), 0);
+    const totalVF = resumosFiltrados.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
+    const totalVS = resumosFiltrados.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
     document.getElementById("kpiValorInventario").textContent = formatBRL(totalInv);
     document.getElementById("kpiValorFalta").textContent = formatBRL(totalVF);
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
@@ -525,6 +554,8 @@
       const nInversao = divsDoGrupo.filter(d => d.situacao === "inversao").length;
       const nResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").length;
       const valorResolvidoManual = divsDoGrupo.filter(d => d.situacao === "resolvido").reduce((s, d) => s + (d.valor || 0), 0);
+      const nResolvidoParcial = divsDoGrupo.filter(d => d.situacao === "resolvido-parcial").length;
+      const valorResolvidoParcial = divsDoGrupo.filter(d => d.situacao === "resolvido-parcial").reduce((s, d) => s + (d.valor || 0), 0);
       const nResolvidos = solDoGrupo.length;
 
       const valorReal = divsDoGrupo.filter(d => d.situacao === "real").reduce((s, d) => s + (d.valor || 0), 0);
@@ -580,8 +611,9 @@
             <div class="gc-sit-item"><span>Real</span><b>${nReal}</b><small>${formatBRL(valorReal)}</small></div>
             <div class="gc-sit-item"><span>Em análise</span><b>${nAnalise}</b><small>${formatBRL(valorAnalise)}</small></div>
             <div class="gc-sit-item"><span>Inversão</span><b>${nInversao}</b><small>${formatBRL(valorInversao)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Resolvido (marcado)</span><b>${nResolvidoManual}</b><small>${formatBRL(valorResolvidoManual)}</small></div>
-            <div class="gc-sit-item resolvido"><span>Resolvidos (auto)</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Resolvido</span><b>${nResolvidoManual}</b><small>${formatBRL(valorResolvidoManual)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Res. Parcial</span><b>${nResolvidoParcial}</b><small>${formatBRL(valorResolvidoParcial)}</small></div>
+            <div class="gc-sit-item resolvido"><span>Resolv. (auto)</span><b>${nResolvidos}</b><small>${formatBRL(valorResolvidos)}</small></div>
           </div>
           <div class="grupo-detalhe ${aberto ? 'show' : ''}">
             <h4>Divergências abertas</h4>

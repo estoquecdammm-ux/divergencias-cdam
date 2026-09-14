@@ -88,7 +88,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -102,6 +102,8 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  // login guardado só nessa aba (não compartilhado entre abas) — permite mais de um usuário logado ao mesmo tempo no mesmo navegador
+  setPersistence(auth, browserSessionPersistence);
   const db = getFirestore(app);
 
   // Domínio interno fixo pra converter matrícula em e-mail do Firebase Auth
