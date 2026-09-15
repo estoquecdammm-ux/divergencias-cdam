@@ -140,6 +140,7 @@
   </div>
   <a class="nav-item active" href="#" data-secao="visao-geral"><span class="ic">▤</span><span>Visão geral</span></a>
   <a class="nav-item" href="#" data-secao="acompanhamento"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
+  <a class="nav-item" href="#" data-secao="historico"><span class="ic">🕘</span><span>Histórico</span></a>
   <div class="nav-section">GRUPOS</div>
   <div id="navGrupos"></div>
   <div class="nav-section">GESTÃO</div>
@@ -206,6 +207,45 @@
       <table>
         <thead><tr><th>Pessoa</th><th>Grupos</th><th>Última importação</th><th>Progresso (justificado)</th><th>Pendências</th><th>Status</th></tr></thead>
         <tbody id="acompanhamentoBody"><tr class="empty-row"><td colspan="6">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="secao-historico" class="secao" style="display:none;">
+    <div class="card">
+      <h2>Histórico</h2>
+      <div class="sub">Todos os códigos de um dia (com ou sem divergência), de todos os grupos ou só de um específico.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+        <select id="histSelectDia" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;min-width:180px;">
+          <option value="">Selecione o dia...</option>
+        </select>
+        <select id="histSelectGrupo" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;min-width:180px;">
+          <option value="">Todos os grupos</option>
+        </select>
+        <input type="text" id="histBusca" placeholder="Buscar por código..." style="flex:1;min-width:200px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;">
+      </div>
+    </div>
+
+    <div class="card" style="overflow-x:auto;">
+      <table style="width:max-content;min-width:100%;">
+        <thead>
+          <tr>
+            <th style="width:100px;">Código</th>
+            <th style="width:200px;">Descrição</th>
+            <th style="width:110px;">Grupo</th>
+            <th class="col-num" style="width:65px;">Falta</th>
+            <th class="col-num" style="width:65px;">Sobra</th>
+            <th class="col-num" style="width:65px;">Sabium 01</th>
+            <th class="col-num" style="width:65px;">Sabium 083</th>
+            <th class="col-num" style="width:80px;">Saldo Senior</th>
+            <th class="col-num" style="width:75px;">A Recolher</th>
+            <th class="col-num" style="width:65px;">Trânsito</th>
+            <th class="col-num" style="width:65px;">Reserva</th>
+            <th class="col-num" style="width:85px;">Custo Médio</th>
+            <th class="col-num" style="width:90px;">Inventário</th>
+          </tr>
+        </thead>
+        <tbody id="histTableBody"><tr class="empty-row"><td colspan="13">Escolhe um dia acima pra ver os dados.</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -364,6 +404,7 @@
   const titulos = {
     "visao-geral": "Visão geral — divergências",
     "acompanhamento": "Acompanhamento por pessoa",
+    "historico": "Histórico",
     "usuarios": "Usuários",
     "grupos": "Grupos",
     "excel": "Exportar Excel"
@@ -386,6 +427,8 @@
       grupoDetalheAtivo = null;
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
     }
+
+    if (alvo === "historico") carregarDiasHistoricoAdmin();
   });
 
 
@@ -748,6 +791,87 @@
     }).join("");
   }
 
+
+  // ---------- HISTÓRICO (admin vê todos os grupos) ----------
+  let histDadosDoDiaAdmin = [];
+
+  async function carregarDiasHistoricoAdmin() {
+    const selectDia = document.getElementById("histSelectDia");
+    const selectGrupo = document.getElementById("histSelectGrupo");
+
+    if (selectGrupo.dataset.populado !== String(gruposCache.length)) {
+      selectGrupo.innerHTML = `<option value="">Todos os grupos</option>` +
+        gruposCache.map(g => `<option value="${g.nome}">${g.nome}</option>`).join("");
+      selectGrupo.dataset.populado = String(gruposCache.length);
+    }
+
+    if (selectDia.dataset.carregado === "1") return;
+    selectDia.dataset.carregado = "1";
+
+    const snap = await getDocs(collection(db, "div_resumo_diario"));
+    const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    selectDia.innerHTML = `<option value="">Selecione o dia...</option>` +
+      dias.map(d => {
+        const [ano, mes, dia] = d.split("-");
+        return `<option value="${d}">${dia}/${mes}/${ano}${d === hoje ? " (hoje)" : ""}</option>`;
+      }).join("");
+  }
+
+  async function carregarTabelaHistoricoAdmin() {
+    const dataEscolhida = document.getElementById("histSelectDia").value;
+    const grupoEscolhido = document.getElementById("histSelectGrupo").value;
+    const tbody = document.getElementById("histTableBody");
+
+    if (!dataEscolhida) {
+      histDadosDoDiaAdmin = [];
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="13">Escolhe um dia acima pra ver os dados.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="13">Carregando...</td></tr>`;
+
+    let refConsulta = grupoEscolhido
+      ? query(collection(db, "div_historico"), where("data", "==", dataEscolhida), where("grupo", "==", grupoEscolhido))
+      : query(collection(db, "div_historico"), where("data", "==", dataEscolhida));
+
+    const snap = await getDocs(refConsulta);
+    histDadosDoDiaAdmin = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderHistTableAdmin();
+  }
+
+  function renderHistTableAdmin() {
+    const tbody = document.getElementById("histTableBody");
+    const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
+    let linhas = histDadosDoDiaAdmin;
+    if (termo) linhas = linhas.filter(d => (d.codigo || "").toLowerCase().includes(termo));
+    linhas = [...linhas].sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""));
+
+    if (linhas.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="13">Nenhum código encontrado.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = linhas.map(d => `
+      <tr>
+        <td class="sku">${d.codigo}</td>
+        <td>${d.descricao || ""}</td>
+        <td>${d.grupo || ""}</td>
+        <td class="qty falta col-num">${d.falta || 0}</td>
+        <td class="qty sobra col-num">${d.sobra || 0}</td>
+        <td class="col-num">${d.sabium01 ?? "—"}</td>
+        <td class="col-num">${d.sabium83 ?? "—"}</td>
+        <td class="col-num">${d.estoquesenior ?? "—"}</td>
+        <td class="col-num">${d.arecolher ?? "—"}</td>
+        <td class="col-num">${d.transito ?? "—"}</td>
+        <td class="col-num">${d.reserva ?? "—"}</td>
+        <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
+        <td class="col-num">${d.inventario != null ? formatBRL(d.inventario) : "—"}</td>
+      </tr>`).join("");
+  }
+
+  document.getElementById("histSelectDia").addEventListener("change", carregarTabelaHistoricoAdmin);
+  document.getElementById("histSelectGrupo").addEventListener("change", carregarTabelaHistoricoAdmin);
+  document.getElementById("histBusca").addEventListener("input", renderHistTableAdmin);
 
   // ---------- MODAL: novo grupo ----------
   const modalGrupo = document.getElementById("modalGrupo");
