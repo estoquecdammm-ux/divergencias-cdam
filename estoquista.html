@@ -69,7 +69,7 @@
   .state-pill.all{background:var(--panel-2);color:var(--text);border-color:var(--border);}
   .state-pill.selected{border-color:currentColor;}
 
-  .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
   thead th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:11.5px;border-bottom:1px solid var(--border);background:var(--panel-2);}
   tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
@@ -146,20 +146,27 @@
     <div class="state-row" id="stateRow"></div>
 
     <div class="table-wrap">
-      <table class="tabela-fixa" style="table-layout:fixed;">
+      <table style="width:max-content;min-width:100%;">
         <thead>
           <tr>
-            <th style="width:12%;">Código</th>
-            <th style="width:24%;">Descrição</th>
-            <th class="col-num" style="width:8%;">Tipo</th>
-            <th class="col-num" style="width:8%;">Qtd (WIS)</th>
-            <th class="col-num" style="width:9%;">Qtd ajustada</th>
-            <th style="width:13%;">Situação</th>
-            <th style="width:16%;">Justificativa</th>
-            <th style="width:10%;">Última edição</th>
+            <th style="width:100px;">Código</th>
+            <th style="width:220px;">Descrição</th>
+            <th class="col-num" style="width:60px;">Tipo</th>
+            <th class="col-num" style="width:65px;">Qtd (WIS)</th>
+            <th class="col-num" style="width:80px;">Qtd ajustada</th>
+            <th class="col-num" style="width:70px;">Sabium 01</th>
+            <th class="col-num" style="width:70px;">Sabium 083</th>
+            <th class="col-num" style="width:80px;">Saldo Senior</th>
+            <th class="col-num" style="width:75px;">A Recolher</th>
+            <th class="col-num" style="width:65px;">Trânsito</th>
+            <th class="col-num" style="width:65px;">Reserva</th>
+            <th class="col-num" style="width:85px;">Custo Médio</th>
+            <th style="width:110px;">Situação</th>
+            <th style="width:200px;">Justificativa</th>
+            <th style="width:95px;">Última edição</th>
           </tr>
         </thead>
-        <tbody id="tableBody"><tr class="empty-row"><td colspan="8">Carregando...</td></tr></tbody>
+        <tbody id="tableBody"><tr class="empty-row"><td colspan="15">Carregando...</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -332,16 +339,23 @@
     if (estadoAtivo === "solucionados") {
       const solRows = solucionadosCache.filter(d => d.grupo === grupoAtivo);
       if (solRows.length === 0) {
-        tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Nenhum item solucionado ainda nesse grupo</td></tr>`;
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="15">Nenhum item solucionado ainda nesse grupo</td></tr>`;
         return;
       }
       tbody.innerHTML = solRows.map(d => `
         <tr>
           <td class="sku">${d.codigo}</td>
           <td>${d.descricao || ""}</td>
-          <td><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
-          <td class="qty ${d.tipoAnterior}">${d.quantidadeAnterior}</td>
-          <td>—</td>
+          <td class="col-num"><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
+          <td class="qty ${d.tipoAnterior} col-num">${d.quantidadeAnterior}</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
+          <td class="col-num">—</td>
           <td style="color:${CORES_SITUACAO.resolvido};font-weight:600;font-size:11.5px;">Resolvido</td>
           <td style="color:var(--muted);">Valor ajustado: ${(d.valorAjustado || 0).toLocaleString("pt-BR", {style:"currency", currency:"BRL"})}</td>
           <td class="meta-edit">${formatWhen(d.resolvidoEm)}</td>
@@ -360,7 +374,7 @@
     if (estadoAtivo === "resolvido-parcial") rows = rows.filter(d => d.situacao === "resolvido-parcial");
 
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Nenhuma divergência aqui — bom sinal!</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="15">Nenhuma divergência aqui — bom sinal!</td></tr>`;
       return;
     }
 
@@ -408,6 +422,13 @@
           <td class="col-num"><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipo} col-num">${d.quantidade}</td>
           <td class="col-num">${qtdAjustadaHtml}</td>
+          <td class="col-num">${d.sabium01 ?? "—"}</td>
+          <td class="col-num">${d.sabium83 ?? "—"}</td>
+          <td class="col-num">${d.estoquesenior ?? "—"}</td>
+          <td class="col-num">${d.arecolher ?? "—"}</td>
+          <td class="col-num">${d.transito ?? "—"}</td>
+          <td class="col-num">${d.reserva ?? "—"}</td>
+          <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
           <td>${selectHtml}</td>
           <td>${inputHtml}</td>
           <td class="meta-edit">${editInfo}</td>
@@ -468,7 +489,7 @@
     }, (err) => {
       console.error("Erro carregando divergências:", err);
       document.getElementById("tableBody").innerHTML =
-        `<tr class="empty-row"><td colspan="8" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
+        `<tr class="empty-row"><td colspan="15" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
     });
 
     const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposQuery));
@@ -722,21 +743,24 @@
         if (!codigosVistosPorGrupo[grupoFinal]) codigosVistosPorGrupo[grupoFinal] = new Set();
         codigosVistosPorGrupo[grupoFinal].add(docId);
 
+        // demais colunas do WISWEB, reaproveitadas no histórico E na própria divergência
+        const situacaoproduto = iSituacao !== -1 ? (cols[iSituacao] || "").trim() : "";
+        const sabium01 = iSabium01 !== -1 ? parseNumeroBR(cols[iSabium01]) : 0;
+        const sabium83 = iSabium83 !== -1 ? parseNumeroBR(cols[iSabium83]) : 0;
+        const estoquesenior = iEstoqueSenior !== -1 ? parseNumeroBR(cols[iEstoqueSenior]) : 0;
+        const arecolher = iARecolher !== -1 ? parseNumeroBR(cols[iARecolher]) : 0;
+        const mapacliente = iMapaCliente !== -1 ? parseNumeroBR(cols[iMapaCliente]) : 0;
+        const transito = iTransito !== -1 ? parseNumeroBR(cols[iTransito]) : 0;
+        const reserva = iReserva !== -1 ? parseNumeroBR(cols[iReserva]) : 0;
+        const customedio = iCustoMedio !== -1 ? parseNumeroBR(cols[iCustoMedio]) : 0;
+
         // guarda no histórico permanente (todos os códigos, com ou sem divergência)
         const historicoId = `${hojeHistorico}_${docId}`;
         enfileirarSet(doc(db, "div_historico", historicoId), {
           data: hojeHistorico,
           codigo, descricao, grupo: grupoFinal,
-          situacaoproduto: iSituacao !== -1 ? (cols[iSituacao] || "").trim() : "",
-          sabium01: iSabium01 !== -1 ? parseNumeroBR(cols[iSabium01]) : 0,
-          sabium83: iSabium83 !== -1 ? parseNumeroBR(cols[iSabium83]) : 0,
-          estoquesenior: iEstoqueSenior !== -1 ? parseNumeroBR(cols[iEstoqueSenior]) : 0,
-          arecolher: iARecolher !== -1 ? parseNumeroBR(cols[iARecolher]) : 0,
-          mapacliente: iMapaCliente !== -1 ? parseNumeroBR(cols[iMapaCliente]) : 0,
-          transito: iTransito !== -1 ? parseNumeroBR(cols[iTransito]) : 0,
-          reserva: iReserva !== -1 ? parseNumeroBR(cols[iReserva]) : 0,
-          falta, sobra,
-          customedio: iCustoMedio !== -1 ? parseNumeroBR(cols[iCustoMedio]) : 0,
+          situacaoproduto, sabium01, sabium83, estoquesenior, arecolher, mapacliente, transito, reserva,
+          falta, sobra, customedio,
           vlrfalta: vlrFalta, vlrsobra: vlrSobra, inventario,
           importadoPor: meuUsuario.matricula,
           importadoEm: serverTimestamp()
@@ -782,6 +806,7 @@
             // mantém justificativa e situação, só atualiza metadados de importação (e "descongela" pro dia de hoje)
             enfileirarSet(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+              sabium01, sabium83, estoquesenior, arecolher, transito, reserva, customedio,
               data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
             }, true);
@@ -790,6 +815,7 @@
             // mudou de quantidade — limpa justificativa, sinaliza
             enfileirarSet(docRef, {
               codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+              sabium01, sabium83, estoquesenior, arecolher, transito, reserva, customedio,
               justificativa: "", mudouQuantidade: true, data: hojeHistorico,
               ultimaImportacaoEm: serverTimestamp()
             }, true);
@@ -798,12 +824,13 @@
         } else {
           enfileirarSet(docRef, {
             codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor,
+            sabium01, sabium83, estoquesenior, arecolher, transito, reserva, customedio,
             justificativa: "", mudouQuantidade: false, data: hojeHistorico,
             ultimaImportacaoEm: serverTimestamp()
           }, false);
           novos++;
         }
-        mapaDivergencias.set(docId, { codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor });
+        mapaDivergencias.set(docId, { codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor, sabium01, sabium83, estoquesenior, arecolher, transito, reserva, customedio });
       }
 
       // Códigos que SUMIRAM do relatório de hoje (não apareceram em nenhuma linha do CSV
