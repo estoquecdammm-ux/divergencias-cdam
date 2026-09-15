@@ -53,6 +53,8 @@
   .import-status.ok{color:#8fd6ab;}
   .import-status.err{color:#e08979;}
   .btn-del{background:none;border:1px solid var(--falta);color:#e08979;border-radius:5px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .btn{background:var(--accent);color:#1b1204;border:none;border-radius:6px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;}
+  .btn:disabled{opacity:.6;cursor:default;}
   .btn-del:hover{background:var(--falta-bg);}
 
   .group-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;}
@@ -88,6 +90,7 @@
   .meta-edit{font-size:11px;color:var(--muted);margin-top:4px;}
   .empty-row td{padding:36px;text-align:center;color:var(--muted);font-size:13px;}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -211,7 +214,15 @@
   <section id="secao-excel" class="secao" style="display:none;">
     <div class="card">
       <h2>Exportar Excel</h2>
-      <div class="sub">Ainda não disponível — assim que tivermos um exemplo real da planilha, essa exportação vai gerar o arquivo idêntico ao de hoje.</div>
+      <div class="sub">Gera um arquivo .xlsx com as colunas do WIS + justificativa, situação e qtd ajustada, pro dia e grupo escolhidos.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <select id="exSelectDia" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;min-width:180px;">
+          <option value="">Selecione o dia...</option>
+        </select>
+        <select id="exSelectGrupo" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;min-width:180px;"></select>
+        <button class="btn" id="btnExportarExcel">Baixar Excel</button>
+      </div>
+      <div class="import-status" id="exportStatus"></div>
     </div>
   </section>
 </main>
@@ -250,6 +261,7 @@
       item.classList.add("active");
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
       if (alvo === "historico") carregarDiasHistorico();
+      if (alvo === "excel") inicializarExportar();
     });
   });
 
@@ -649,6 +661,115 @@
   });
 
   document.getElementById("histBusca").addEventListener("input", renderHistTable);
+
+  // ---------- EXPORTAR EXCEL ----------
+  async function inicializarExportar() {
+    const selectDia = document.getElementById("exSelectDia");
+    const selectGrupo = document.getElementById("exSelectGrupo");
+
+    if (selectGrupo.dataset.populado !== "1") {
+      selectGrupo.innerHTML = meuUsuario.grupos.map(g => `<option value="${g}">${g}</option>`).join("");
+      selectGrupo.dataset.populado = "1";
+    }
+
+    if (selectDia.dataset.carregado === "1") return;
+    selectDia.dataset.carregado = "1";
+
+    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
+    const snap = await getDocs(query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposDoUsuario)));
+    const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
+
+    selectDia.innerHTML = dias.map(d => {
+      const [ano, mes, dia] = d.split("-");
+      return `<option value="${d}" ${d === HOJE_STR ? "selected" : ""}>${dia}/${mes}/${ano}${d === HOJE_STR ? " (hoje)" : ""}</option>`;
+    }).join("");
+  }
+
+  document.getElementById("btnExportarExcel").addEventListener("click", async () => {
+    const dataEscolhida = document.getElementById("exSelectDia").value;
+    const grupoEscolhido = document.getElementById("exSelectGrupo").value;
+    const statusEl = document.getElementById("exportStatus");
+    if (!dataEscolhida || !grupoEscolhido) {
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Escolhe o dia e o grupo primeiro.";
+      return;
+    }
+
+    const btn = document.getElementById("btnExportarExcel");
+    btn.disabled = true;
+    btn.textContent = "Gerando...";
+    statusEl.className = "import-status show";
+    statusEl.textContent = "Buscando dados...";
+
+    try {
+      // pega o dpto cru desse grupo (formato original do WIS), pra deixar a coluna igualzinha
+      const gruposSnap = await getDocs(collection(db, "div_grupos"));
+      const grupoInfo = gruposSnap.docs.map(d => d.data()).find(g => g.nome === grupoEscolhido);
+      const dptoCru = grupoInfo ? grupoInfo.dpto : grupoEscolhido;
+
+      const histSnap = await getDocs(query(
+        collection(db, "div_historico"),
+        where("data", "==", dataEscolhida),
+        where("grupo", "==", grupoEscolhido)
+      ));
+      const historico = histSnap.docs.map(d => d.data());
+
+      // junta com a divergência ATUAL (justificativa/situação/qtd ajustada são sempre o estado de agora,
+      // não existe um "retrato" de justificativa de dias passados)
+      const divSnap = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "==", grupoEscolhido)));
+      const mapaDiv = new Map();
+      divSnap.docs.forEach(d => mapaDiv.set(d.data().codigo, d.data()));
+
+      const linhas = historico.map(h => {
+        const div = mapaDiv.get(h.codigo);
+        return {
+          codigo: h.codigo,
+          descricao: h.descricao,
+          dpto: dptoCru,
+          situacaoproduto: h.situacaoproduto || "",
+          sabium01: h.sabium01 || 0,
+          sabium83: h.sabium83 || 0,
+          estoquesenior: h.estoquesenior || 0,
+          arecolher: h.arecolher || 0,
+          mapacliente: h.mapacliente || 0,
+          transito: h.transito || 0,
+          reserva: h.reserva || 0,
+          falta: h.falta || 0,
+          sobra: h.sobra || 0,
+          customedio: h.customedio || 0,
+          vlrfalta: h.vlrfalta || 0,
+          vlrsobra: h.vlrsobra || 0,
+          inventario: h.inventario || 0,
+          justificativa: div ? (div.justificativa || "") : "",
+          situacao: div ? (div.situacao || "") : "",
+          quantidadeAjustada: div ? (div.quantidadeAjustada ?? "") : ""
+        };
+      });
+
+      if (linhas.length === 0) {
+        statusEl.className = "import-status show err";
+        statusEl.textContent = "Nenhum dado encontrado pra esse dia/grupo.";
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(linhas);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Divergencias");
+      const nomeArquivo = `divergencias_${grupoEscolhido.replace(/[^a-zA-Z0-9]+/g, "_")}_${dataEscolhida}.xlsx`;
+      XLSX.writeFile(wb, nomeArquivo);
+
+      statusEl.className = "import-status show ok";
+      statusEl.textContent = `Exportado: ${linhas.length} linhas.`;
+    } catch (err) {
+      console.error(err);
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Erro ao exportar: " + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Baixar Excel";
+    }
+  });
+
 
   function renderHistGroupTabs() {
     const wrap = document.getElementById("histGroupTabs");
