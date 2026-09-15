@@ -73,6 +73,7 @@
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
   thead th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:11.5px;border-bottom:1px solid var(--border);background:var(--panel-2);}
   tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  th.col-num, td.col-num{text-align:center;}
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:rgba(255,255,255,0.02);}
   .sku{font-weight:600;}
@@ -145,17 +146,17 @@
     <div class="state-row" id="stateRow"></div>
 
     <div class="table-wrap">
-      <table>
+      <table class="tabela-fixa" style="table-layout:fixed;">
         <thead>
           <tr>
-            <th style="width:105px;">Código</th>
-            <th>Descrição</th>
-            <th style="width:70px;">Tipo</th>
-            <th style="width:65px;">Qtd (WIS)</th>
-            <th style="width:90px;">Qtd ajustada</th>
-            <th style="width:120px;">Situação</th>
-            <th style="width:220px;">Justificativa</th>
-            <th style="width:100px;">Última edição</th>
+            <th style="width:12%;">Código</th>
+            <th style="width:24%;">Descrição</th>
+            <th class="col-num" style="width:8%;">Tipo</th>
+            <th class="col-num" style="width:8%;">Qtd (WIS)</th>
+            <th class="col-num" style="width:9%;">Qtd ajustada</th>
+            <th style="width:13%;">Situação</th>
+            <th style="width:16%;">Justificativa</th>
+            <th style="width:10%;">Última edição</th>
           </tr>
         </thead>
         <tbody id="tableBody"><tr class="empty-row"><td colspan="8">Carregando...</td></tr></tbody>
@@ -404,9 +405,9 @@
         <tr>
           <td class="sku">${d.codigo}</td>
           <td>${d.descricao || ""} ${diffTag}${freezeTag}</td>
-          <td><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
-          <td class="qty ${d.tipo}">${d.quantidade}</td>
-          <td>${qtdAjustadaHtml}</td>
+          <td class="col-num"><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
+          <td class="qty ${d.tipo} col-num">${d.quantidade}</td>
+          <td class="col-num">${qtdAjustadaHtml}</td>
           <td>${selectHtml}</td>
           <td>${inputHtml}</td>
           <td class="meta-edit">${editInfo}</td>
