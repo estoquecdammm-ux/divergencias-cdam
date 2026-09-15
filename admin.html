@@ -177,6 +177,15 @@
       <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
     </div>
     <div class="soon-note">O filtro de grupo (dentro da caixa de inventário) afeta todas as caixas da página — tanto as contagens quanto os valores. Selecionando "Todos os grupos", volta a somar tudo.</div>
+
+    <div class="card" style="margin-top:22px;">
+      <h2>Resumo — Congelado x Fechamento x Redução</h2>
+      <div class="sub" id="resumoCFRsub">Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido.</div>
+      <table>
+        <thead><tr><th></th><th>Congelado</th><th>Fechamento</th><th>Redução</th></tr></thead>
+        <tbody id="resumoCFRBody"></tbody>
+      </table>
+    </div>
   </section>
 
   <section id="secao-grupo-detalhe" class="secao" style="display:none;">
@@ -532,6 +541,7 @@
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
 
+    renderResumoCFR(grupoFiltro, totalInv, totalVF, totalVS, resumosFiltrados);
     renderNavGrupos();
     if (grupoDetalheAtivo) renderGrupoDetalhe(grupoDetalheAtivo);
 
@@ -607,6 +617,46 @@
       <a class="nav-item ${grupoDetalheAtivo === g.nome ? 'active' : ''}" href="#" data-secao="grupo-detalhe" data-grupo-nome="${g.nome}">
         <span class="ic">▫</span><span>${g.nome}</span>
       </a>`).join("");
+  }
+
+  function renderResumoCFR(grupoFiltro, totalInvCong, totalVFCong, totalVSCong, resumosFiltrados) {
+    const tbody = document.getElementById("resumoCFRBody");
+    if (!tbody) return;
+
+    // Fechamento = valores AO VIVO agora, descontando o que já foi marcado Resolvido/Resolvido Parcial
+    const divsBase = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    const divsAbertas = divsBase.filter(d => d.situacao !== "resolvido" && d.situacao !== "resolvido-parcial");
+    const fechFalta = Math.abs(divsAbertas.filter(d => d.tipo === "falta").reduce((s, d) => s + (d.valor || 0), 0));
+    const fechSobra = divsAbertas.filter(d => d.tipo === "sobra").reduce((s, d) => s + (d.valor || 0), 0);
+
+    const congFalta = Math.abs(totalVFCong);
+    const congSobra = totalVSCong;
+    const congDiv = congFalta + congSobra;
+    const fechDiv = fechFalta + fechSobra;
+    const reducaoFalta = congFalta - fechFalta;
+    const reducaoSobra = congSobra - fechSobra;
+    const reducaoDiv = congDiv - fechDiv;
+
+    const divPercCong = totalInvCong ? (congDiv / totalInvCong) * 100 : 0;
+    const divPercFech = totalInvCong ? (fechDiv / totalInvCong) * 100 : 0;
+    const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
+
+    const linha = (label, cong, fech, red, isPerc) => `
+      <tr>
+        <td style="color:var(--muted);font-weight:600;">${label}</td>
+        <td>${isPerc ? cong.toFixed(2) + "%" : formatBRL(cong)}</td>
+        <td>${isPerc ? fech.toFixed(2) + "%" : formatBRL(fech)}</td>
+        <td style="color:${red > 0 ? 'var(--ok)' : 'var(--muted)'};">${isPerc ? red.toFixed(2) + "%" : formatBRL(red)}</td>
+      </tr>`;
+
+    tbody.innerHTML =
+      linha("Inventário", totalInvCong, totalInvCong, 0, false) +
+      linha("Falta", congFalta, fechFalta, reducaoFalta, false) +
+      linha("Sobra", congSobra, fechSobra, reducaoSobra, false) +
+      linha("Divergência", congDiv, fechDiv, reducaoDiv, false) +
+      linha("Div %", divPercCong, divPercFech, divPercCong - divPercFech, true) +
+      linha("Acurácia", 100 - divPercCong, 100 - divPercFech, divPercFech <= divPercCong ? (divPercCong - divPercFech) : -(divPercFech - divPercCong), true) +
+      `<tr><td style="color:var(--muted);font-weight:600;">Redução %</td><td colspan="2" style="color:var(--muted);">—</td><td style="color:var(--ok);font-weight:600;">${reducaoPerc.toFixed(2)}%</td></tr>`;
   }
 
   const CATEGORIAS_GRUPO = [
