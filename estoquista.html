@@ -592,6 +592,7 @@
 
       // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
       const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
+      const codigosVistosPorGrupo = {}; // { nomeGrupo: Set(docId) } — pra detectar código que sumiu do relatório
       const hojeHistorico = new Date().toISOString().slice(0, 10);
 
       for (let i = 1; i < linhas.length; i++) {
@@ -630,6 +631,8 @@
         totaisPorGrupo[grupoFinal].totalCodigos += 1;
 
         const docId = sanitizarId(codigo);
+        if (!codigosVistosPorGrupo[grupoFinal]) codigosVistosPorGrupo[grupoFinal] = new Set();
+        codigosVistosPorGrupo[grupoFinal].add(docId);
 
         // guarda no histórico permanente (todos os códigos, com ou sem divergência)
         const historicoId = `${hojeHistorico}_${docId}`;
@@ -713,6 +716,35 @@
           novos++;
         }
         mapaDivergencias.set(docId, { codigo, descricao, grupo: grupoFinal, tipo, quantidade, valor });
+      }
+
+      // Códigos que SUMIRAM do relatório de hoje (não apareceram em nenhuma linha do CSV
+      // pros grupos cobertos por esse arquivo) também contam como resolvidos — o WISWEB
+      // só lista o que tem divergência, então sumir do relatório é sinal de que resolveu.
+      for (const nomeGrupo of Object.keys(totaisPorGrupo)) {
+        const vistos = codigosVistosPorGrupo[nomeGrupo] || new Set();
+        for (const [docIdExistente, antigoExistente] of mapaDivergencias.entries()) {
+          if (antigoExistente.grupo !== nomeGrupo) continue;
+          if (vistos.has(docIdExistente)) continue; // apareceu no CSV de hoje, já tratado acima
+
+          const solId = `${hojeHistorico}_${docIdExistente}`;
+          enfileirarSet(doc(db, "div_solucionados", solId), {
+            data: hojeHistorico,
+            codigo: antigoExistente.codigo,
+            descricao: antigoExistente.descricao || "",
+            grupo: antigoExistente.grupo,
+            tipoAnterior: antigoExistente.tipo || null,
+            quantidadeAnterior: antigoExistente.quantidade || 0,
+            valorAjustado: antigoExistente.valor || 0,
+            justificativaFinal: antigoExistente.justificativa || "",
+            resolvidoPor: meuUsuario.matricula,
+            resolvidoEm: serverTimestamp()
+          });
+          enfileirarDelete(doc(db, "div_divergencias", docIdExistente));
+          logSolucionados.push({ solId, divId: docIdExistente, divAntes: antigoExistente });
+          mapaDivergencias.delete(docIdExistente);
+          resolvidos++;
+        }
       }
 
       // fecha o último lote pendente
