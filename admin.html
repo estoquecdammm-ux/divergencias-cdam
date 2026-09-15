@@ -212,6 +212,15 @@
       </table>
     </div>
 
+    <div class="card" style="margin-top:20px;">
+      <h2>Modo de testes</h2>
+      <div class="sub" style="color:var(--muted);">Enquanto ligado, divergências de dias anteriores ficam travadas pra edição até reimportar o CSV do dia (comportamento normal de produção). Desliga enquanto estiver testando/ajustando dados antigos.</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="toggleCongelamento" checked style="width:18px;height:18px;">
+        Congelamento de dias anteriores ativo
+      </label>
+    </div>
+
     <div class="card danger-card" style="margin-top:20px;">
       <h2>Zona de perigo</h2>
       <div class="sub" style="color:var(--muted);">Apaga todas as divergências e resumos diários (útil pra limpar dados de teste). Não apaga usuários nem grupos.</div>
@@ -770,6 +779,15 @@
   });
 
   // ---------- ZONA DE PERIGO: apagar todas as divergências e resumos ----------
+  // ---------- MODO DE TESTES: liga/desliga o congelamento de dias anteriores ----------
+  onSnapshot(doc(db, "div_config", "geral"), (snap) => {
+    const ativo = snap.exists() ? (snap.data().congelamentoAtivo !== false) : true;
+    document.getElementById("toggleCongelamento").checked = ativo;
+  });
+  document.getElementById("toggleCongelamento").addEventListener("change", async (e) => {
+    await setDoc(doc(db, "div_config", "geral"), { congelamentoAtivo: e.target.checked }, { merge: true });
+  });
+
   document.getElementById("btnLimparTudo").addEventListener("click", async () => {
     const confirmacao = prompt('Isso vai apagar TODAS as divergências e resumos diários de todo mundo. Digite "APAGAR" pra confirmar:');
     if (confirmacao !== "APAGAR") return;

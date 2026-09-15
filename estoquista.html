@@ -198,6 +198,11 @@
   let divergenciasCache = [];
   let solucionadosCache = [];
   const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
+  let congelamentoAtivo = true; // padrão seguro; admin pode desligar em div_config/geral enquanto testa
+  onSnapshot(doc(db, "div_config", "geral"), (snap) => {
+    congelamentoAtivo = snap.exists() ? (snap.data().congelamentoAtivo !== false) : true;
+    renderTable();
+  });
   let gruposCache = []; // [{id, nome, dpto}] — todos os grupos cadastrados pelo admin
 
   // Mantém o mapeamento nome<->dpto sempre atualizado
@@ -338,7 +343,7 @@
       const editInfo = d.ultimaEdicaoPor
         ? `${d.ultimaEdicaoPor === meuUsuario.matricula ? "Você" : d.ultimaEdicaoPor} · ${formatWhen(d.ultimaEdicaoEm)}`
         : "—";
-      const congelado = !d.data || d.data !== HOJE_STR;
+      const congelado = congelamentoAtivo && (!d.data || d.data !== HOJE_STR);
       const inputHtml = congelado
         ? `<input class="just" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
         : `<input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda">`;
