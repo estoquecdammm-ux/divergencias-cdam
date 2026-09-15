@@ -477,6 +477,15 @@
     renderDashboard();
   });
 
+  const CORES_SITUACAO = {
+    "real": "#c4483a",
+    "em-analise": "#c9a227",
+    "inversao": "#3e7cb1",
+    "resolvido": "#4c9a6a",
+    "resolvido-parcial": "#8b5cf6"
+  };
+  const LABELS_SITUACAO = { real: "Real", "em-analise": "Em análise", inversao: "Inversão", resolvido: "Resolvido", "resolvido-parcial": "Resolvido Parcial" };
+
   function formatBRL(v) {
     return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
@@ -512,7 +521,11 @@
     const totalVF = resumosFiltrados.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
     const totalVS = resumosFiltrados.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
     const solucionadosFiltrados = grupoFiltro ? solucionadosCache.filter(d => d.grupo === grupoFiltro) : solucionadosCache;
-    const totalResolvido = solucionadosFiltrados.reduce((s, d) => s + (d.valorAjustado || 0), 0);
+    const divergenciasResolvidasManual = (grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache)
+      .filter(d => d.situacao === "resolvido" || d.situacao === "resolvido-parcial");
+    const totalResolvido =
+      solucionadosFiltrados.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
+      divergenciasResolvidasManual.reduce((s, d) => s + (d.valor || 0), 0);
     document.getElementById("kpiValorInventario").textContent = formatBRL(totalInv);
     document.getElementById("kpiValorFalta").textContent = formatBRL(totalVF);
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
@@ -621,13 +634,15 @@
       const corpo = linhas.length === 0
         ? `<div class="semdiv">Nenhum item aqui</div>`
         : `<table>
-             <thead><tr><th style="width:130px;">Código</th><th>Descrição</th><th style="width:70px;">Qtd</th><th>Justificativa</th><th style="width:130px;">Última edição</th></tr></thead>
+             <thead><tr><th style="width:120px;">Código</th><th>Descrição</th><th style="width:65px;">Qtd (WIS)</th><th style="width:90px;">Qtd ajustada</th><th style="width:110px;">Situação</th><th>Justificativa</th><th style="width:130px;">Última edição</th></tr></thead>
              <tbody>
                ${linhas.map(d => `
                  <tr>
                    <td class="sku">${d.codigo}</td>
                    <td>${d.descricao || ""}</td>
                    <td class="qty ${d.tipo}">${d.quantidade}</td>
+                   <td style="color:var(--accent);font-weight:600;">${d.quantidadeAjustada ?? "—"}</td>
+                   <td>${d.situacao ? `<span style="color:${CORES_SITUACAO[d.situacao]};font-weight:600;font-size:11.5px;">${LABELS_SITUACAO[d.situacao]}</span>` : `<span style="color:var(--muted);">—</span>`}</td>
                    <td style="color:${d.justificativa ? 'var(--text)' : 'var(--accent)'};white-space:normal;line-height:1.4;">${d.justificativa || 'sem justificativa'}</td>
                    <td style="color:var(--muted);font-size:11px;">${d.ultimaEdicaoPor ? `${d.ultimaEdicaoPor}<br>${d.ultimaEdicaoEm?.toDate ? d.ultimaEdicaoEm.toDate().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}` : "—"}</td>
                  </tr>`).join("")}

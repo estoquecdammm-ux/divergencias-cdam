@@ -139,16 +139,17 @@
       <table>
         <thead>
           <tr>
-            <th style="width:110px;">Código</th>
+            <th style="width:105px;">Código</th>
             <th>Descrição</th>
-            <th style="width:75px;">Tipo</th>
-            <th style="width:80px;">Qtd</th>
+            <th style="width:70px;">Tipo</th>
+            <th style="width:65px;">Qtd (WIS)</th>
+            <th style="width:90px;">Qtd ajustada</th>
             <th style="width:120px;">Situação</th>
-            <th style="width:260px;">Justificativa</th>
-            <th style="width:105px;">Última edição</th>
+            <th style="width:220px;">Justificativa</th>
+            <th style="width:100px;">Última edição</th>
           </tr>
         </thead>
-        <tbody id="tableBody"><tr class="empty-row"><td colspan="7">Carregando...</td></tr></tbody>
+        <tbody id="tableBody"><tr class="empty-row"><td colspan="8">Carregando...</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -211,6 +212,15 @@
   let solucionadosCache = [];
   let resumoHojeCache = [];
   const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
+
+  // Cores por situação — usadas no select da tabela e nos badges do admin
+  const CORES_SITUACAO = {
+    "real": "#c4483a",
+    "em-analise": "#c9a227",
+    "inversao": "#3e7cb1",
+    "resolvido": "#4c9a6a",
+    "resolvido-parcial": "#8b5cf6"
+  };
   let congelamentoAtivo = true; // padrão seguro; admin pode desligar em div_config/geral enquanto testa
   onSnapshot(doc(db, "div_config", "geral"), (snap) => {
     congelamentoAtivo = snap.exists() ? (snap.data().congelamentoAtivo !== false) : true;
@@ -312,7 +322,7 @@
     if (estadoAtivo === "solucionados") {
       const solRows = solucionadosCache.filter(d => d.grupo === grupoAtivo);
       if (solRows.length === 0) {
-        tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhum item solucionado ainda nesse grupo</td></tr>`;
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Nenhum item solucionado ainda nesse grupo</td></tr>`;
         return;
       }
       tbody.innerHTML = solRows.map(d => `
@@ -321,7 +331,8 @@
           <td>${d.descricao || ""}</td>
           <td><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipoAnterior}">${d.quantidadeAnterior}</td>
-          <td style="color:var(--ok);font-weight:600;font-size:11.5px;">Resolvido</td>
+          <td>—</td>
+          <td style="color:${CORES_SITUACAO.resolvido};font-weight:600;font-size:11.5px;">Resolvido</td>
           <td style="color:var(--muted);">Valor ajustado: ${(d.valorAjustado || 0).toLocaleString("pt-BR", {style:"currency", currency:"BRL"})}</td>
           <td class="meta-edit">${formatWhen(d.resolvidoEm)}</td>
         </tr>`).join("");
@@ -339,7 +350,7 @@
     if (estadoAtivo === "resolvido-parcial") rows = rows.filter(d => d.situacao === "resolvido-parcial");
 
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhuma divergência aqui — bom sinal!</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Nenhuma divergência aqui — bom sinal!</td></tr>`;
       return;
     }
 
@@ -362,19 +373,31 @@
         ? `<input class="just" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
         : `<input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda">`;
       const freezeTag = congelado ? `<span class="diff-tag" style="background:rgba(139,151,166,0.15);color:var(--muted);">congelado</span>` : "";
+
+      const corSituacao = d.situacao ? CORES_SITUACAO[d.situacao] : null;
+      const estiloSelect = corSituacao
+        ? `border-color:${corSituacao};color:${corSituacao};font-weight:600;`
+        : `color:var(--text);`;
       const selectHtml = congelado
         ? `<select disabled style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--muted);font-size:12px;">
              <option>${OPCOES_SITUACAO.find(o => o.v === (d.situacao||""))?.l || "—"}</option>
            </select>`
-        : `<select class="sel-situacao" data-id="${d.id}" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--text);font-size:12px;font-family:inherit;">
+        : `<select class="sel-situacao" data-id="${d.id}" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;font-size:12px;font-family:inherit;${estiloSelect}">
              ${OPCOES_SITUACAO.map(o => `<option value="${o.v}" ${d.situacao === o.v || (!d.situacao && o.v === "") ? "selected" : ""}>${o.l}</option>`).join("")}
            </select>`;
+
+      const qtdAjustadaHtml = congelado
+        ? `<input type="text" value="${d.quantidadeAjustada ?? ""}" placeholder="—" disabled style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--muted);font-size:12px;">`
+        : `<input type="number" step="any" class="qtd-ajustada" data-id="${d.id}" value="${d.quantidadeAjustada ?? ""}" placeholder="—"
+                 style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--accent);font-size:12px;font-family:inherit;">`;
+
       return `
         <tr>
           <td class="sku">${d.codigo}</td>
           <td>${d.descricao || ""} ${diffTag}${freezeTag}</td>
           <td><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipo}">${d.quantidade}</td>
+          <td>${qtdAjustadaHtml}</td>
           <td>${selectHtml}</td>
           <td>${inputHtml}</td>
           <td class="meta-edit">${editInfo}</td>
@@ -386,6 +409,18 @@
         const id = sel.dataset.id;
         await setDoc(doc(db, "div_divergencias", id), {
           situacao: sel.value,
+          ultimaEdicaoPor: meuUsuario.matricula,
+          ultimaEdicaoEm: serverTimestamp()
+        }, { merge: true });
+      });
+    });
+
+    tbody.querySelectorAll("input.qtd-ajustada").forEach(inp => {
+      inp.addEventListener("change", async () => {
+        const id = inp.dataset.id;
+        const valor = inp.value.trim();
+        await setDoc(doc(db, "div_divergencias", id), {
+          quantidadeAjustada: valor === "" ? null : parseFloat(valor.replace(",", ".")),
           ultimaEdicaoPor: meuUsuario.matricula,
           ultimaEdicaoEm: serverTimestamp()
         }, { merge: true });
@@ -423,7 +458,7 @@
     }, (err) => {
       console.error("Erro carregando divergências:", err);
       document.getElementById("tableBody").innerHTML =
-        `<tr class="empty-row"><td colspan="7" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
+        `<tr class="empty-row"><td colspan="8" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
     });
 
     const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposQuery));
@@ -448,7 +483,10 @@
   function renderValoresKpi() {
     const resumo = resumoHojeCache.find(r => r.grupo === grupoAtivo);
     const solDoGrupo = solucionadosCache.filter(d => d.grupo === grupoAtivo);
-    const totalResolvido = solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0);
+    const divergenciasResolvidasManual = divergenciasCache.filter(d => d.grupo === grupoAtivo && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial"));
+    const totalResolvido =
+      solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
+      divergenciasResolvidasManual.reduce((s, d) => s + (d.valor || 0), 0);
     document.getElementById("kpiValorInventario").textContent = resumo ? formatBRL(resumo.totalInventario) : "—";
     document.getElementById("kpiValorFalta").textContent = resumo ? formatBRL(resumo.totalValorFalta) : "—";
     document.getElementById("kpiValorSobra").textContent = resumo ? formatBRL(resumo.totalValorSobra) : "—";
