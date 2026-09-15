@@ -41,6 +41,11 @@
   .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px;}
   .dropzone{border:1.5px dashed var(--border);border-radius:8px;padding:22px;text-align:center;color:var(--muted);font-size:13px;background:var(--panel-2);cursor:pointer;}
   .dropzone:hover{border-color:var(--accent);}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+  .kpi .num{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
   .dropzone.dragover{border-color:var(--accent);background:rgba(232,163,61,0.08);color:var(--text);}
   .dropzone .accent{color:var(--accent);font-weight:600;}
   .import-status{font-size:12.5px;margin-top:10px;display:none;}
@@ -109,6 +114,13 @@
   </header>
 
   <section id="secao-minhas" class="secao">
+    <div class="kpi-row">
+      <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
+      <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
+      <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
+      <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
+    </div>
+
     <div class="card">
       <h2>Importar CSV do dia</h2>
       <div class="sub">Suba o export do WISWEB já filtrado pelo(s) seu(s) grupo(s) — só esses SKUs são atualizados.</div>
@@ -197,6 +209,7 @@
   let estadoAtivo = "todos";
   let divergenciasCache = [];
   let solucionadosCache = [];
+  let resumoHojeCache = [];
   const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
   let congelamentoAtivo = true; // padrão seguro; admin pode desligar em div_config/geral enquanto testa
   onSnapshot(doc(db, "div_config", "geral"), (snap) => {
@@ -253,6 +266,7 @@
         renderGroupTabs();
         renderStateRow();
         renderTable();
+        renderValoresKpi();
       });
     });
   }
@@ -417,7 +431,28 @@
       solucionadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderStateRow();
       renderTable();
+      renderValoresKpi();
     }, (err) => console.error("Erro carregando solucionados:", err));
+
+    const qResumo = query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposQuery), where("data", "==", HOJE_STR));
+    onSnapshot(qResumo, (snap) => {
+      resumoHojeCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderValoresKpi();
+    }, (err) => console.error("Erro carregando resumo diário:", err));
+  }
+
+  function formatBRL(v) {
+    return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function renderValoresKpi() {
+    const resumo = resumoHojeCache.find(r => r.grupo === grupoAtivo);
+    const solDoGrupo = solucionadosCache.filter(d => d.grupo === grupoAtivo);
+    const totalResolvido = solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0);
+    document.getElementById("kpiValorInventario").textContent = resumo ? formatBRL(resumo.totalInventario) : "—";
+    document.getElementById("kpiValorFalta").textContent = resumo ? formatBRL(resumo.totalValorFalta) : "—";
+    document.getElementById("kpiValorSobra").textContent = resumo ? formatBRL(resumo.totalValorSobra) : "—";
+    document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
   }
 
   // ---------- IMPORT CSV (múltiplos arquivos + arrastar e soltar) ----------
