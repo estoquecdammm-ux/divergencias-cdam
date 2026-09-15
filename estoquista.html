@@ -174,7 +174,37 @@
   <section id="secao-historico" class="secao" style="display:none;">
     <div class="card">
       <h2>Histórico</h2>
-      <div class="sub">Ainda não disponível — em breve dá pra ver dias anteriores aqui.</div>
+      <div class="sub">Todos os códigos de um dia (com ou sem divergência), do jeito que estavam naquele dia.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+        <select id="histSelectDia" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;min-width:180px;">
+          <option value="">Selecione o dia...</option>
+        </select>
+        <input type="text" id="histBusca" placeholder="Buscar por código..." style="flex:1;min-width:200px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px;font-family:inherit;">
+      </div>
+    </div>
+
+    <div class="group-tabs" id="histGroupTabs"></div>
+
+    <div class="table-wrap">
+      <table style="width:max-content;min-width:100%;">
+        <thead>
+          <tr>
+            <th style="width:100px;">Código</th>
+            <th style="width:220px;">Descrição</th>
+            <th class="col-num" style="width:70px;">Falta</th>
+            <th class="col-num" style="width:70px;">Sobra</th>
+            <th class="col-num" style="width:70px;">Sabium 01</th>
+            <th class="col-num" style="width:70px;">Sabium 083</th>
+            <th class="col-num" style="width:80px;">Saldo Senior</th>
+            <th class="col-num" style="width:75px;">A Recolher</th>
+            <th class="col-num" style="width:65px;">Trânsito</th>
+            <th class="col-num" style="width:65px;">Reserva</th>
+            <th class="col-num" style="width:85px;">Custo Médio</th>
+            <th class="col-num" style="width:90px;">Inventário</th>
+          </tr>
+        </thead>
+        <tbody id="histTableBody"><tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr></tbody>
+      </table>
     </div>
   </section>
 
@@ -219,6 +249,7 @@
       document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
       item.classList.add("active");
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
+      if (alvo === "historico") carregarDiasHistorico();
     });
   });
 
@@ -486,6 +517,7 @@
       renderGroupTabs();
       renderStateRow();
       renderTable();
+      renderValoresKpi();
     }, (err) => {
       console.error("Erro carregando divergências:", err);
       document.getElementById("tableBody").innerHTML =
@@ -572,6 +604,97 @@
       linha("Div %", divPercCong, divPercFech, divPercCong - divPercFech, true) +
       linha("Acurácia", 100 - divPercCong, 100 - divPercFech, divPercFech <= divPercCong ? (divPercCong - divPercFech) : -(divPercFech - divPercCong), true) +
       `<tr><td style="color:var(--muted);font-weight:600;">Redução %</td><td colspan="2" style="color:var(--muted);">—</td><td style="color:var(--ok);font-weight:600;">${reducaoPerc.toFixed(2)}%</td></tr>`;
+  }
+
+  // ---------- HISTÓRICO ----------
+  let histGrupoAtivo = null;
+  let histDadosDoDia = [];
+
+  async function carregarDiasHistorico() {
+    const select = document.getElementById("histSelectDia");
+    if (select.dataset.carregado === "1") return; // só busca uma vez por sessão
+    select.dataset.carregado = "1";
+
+    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
+    const snap = await getDocs(query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposDoUsuario)));
+    const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
+
+    select.innerHTML = `<option value="">Selecione o dia...</option>` +
+      dias.map(d => {
+        const [ano, mes, dia] = d.split("-");
+        return `<option value="${d}">${dia}/${mes}/${ano}${d === HOJE_STR ? " (hoje)" : ""}</option>`;
+      }).join("");
+  }
+
+  document.getElementById("histSelectDia").addEventListener("change", async (e) => {
+    const dataEscolhida = e.target.value;
+    if (!dataEscolhida) {
+      histDadosDoDia = [];
+      document.getElementById("histGroupTabs").innerHTML = "";
+      renderHistTable();
+      return;
+    }
+    document.getElementById("histTableBody").innerHTML = `<tr class="empty-row"><td colspan="12">Carregando...</td></tr>`;
+
+    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
+    const snap = await getDocs(query(
+      collection(db, "div_historico"),
+      where("data", "==", dataEscolhida),
+      where("grupo", "in", gruposDoUsuario)
+    ));
+    histDadosDoDia = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    histGrupoAtivo = meuUsuario.grupos[0] || null;
+    renderHistGroupTabs();
+    renderHistTable();
+  });
+
+  document.getElementById("histBusca").addEventListener("input", renderHistTable);
+
+  function renderHistGroupTabs() {
+    const wrap = document.getElementById("histGroupTabs");
+    wrap.innerHTML = meuUsuario.grupos.map(g => {
+      const count = histDadosDoDia.filter(d => d.grupo === g).length;
+      return `<div class="gtab ${g === histGrupoAtivo ? 'active' : ''}" data-grupo="${g}">${g}<span class="count">${count}</span></div>`;
+    }).join("");
+    wrap.querySelectorAll(".gtab").forEach(el => {
+      el.addEventListener("click", () => {
+        histGrupoAtivo = el.dataset.grupo;
+        renderHistGroupTabs();
+        renderHistTable();
+      });
+    });
+  }
+
+  function renderHistTable() {
+    const tbody = document.getElementById("histTableBody");
+    if (histDadosDoDia.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr>`;
+      return;
+    }
+    const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
+    let linhas = histDadosDoDia.filter(d => d.grupo === histGrupoAtivo);
+    if (termo) linhas = linhas.filter(d => (d.codigo || "").toLowerCase().includes(termo));
+    linhas.sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""));
+
+    if (linhas.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Nenhum código encontrado.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = linhas.map(d => `
+      <tr>
+        <td class="sku">${d.codigo}</td>
+        <td>${d.descricao || ""}</td>
+        <td class="qty falta col-num">${d.falta || 0}</td>
+        <td class="qty sobra col-num">${d.sobra || 0}</td>
+        <td class="col-num">${d.sabium01 ?? "—"}</td>
+        <td class="col-num">${d.sabium83 ?? "—"}</td>
+        <td class="col-num">${d.estoquesenior ?? "—"}</td>
+        <td class="col-num">${d.arecolher ?? "—"}</td>
+        <td class="col-num">${d.transito ?? "—"}</td>
+        <td class="col-num">${d.reserva ?? "—"}</td>
+        <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
+        <td class="col-num">${d.inventario != null ? formatBRL(d.inventario) : "—"}</td>
+      </tr>`).join("");
   }
 
   // ---------- IMPORT CSV (múltiplos arquivos + arrastar e soltar) ----------
