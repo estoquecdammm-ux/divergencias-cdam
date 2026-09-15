@@ -232,7 +232,7 @@
       </label>
     </div>
 
-    <div class="card danger-card" style="margin-top:20px;">
+    <div class="card danger-card" id="secaoZonaPerigo" style="margin-top:20px;display:none;">
       <h2>Zona de perigo</h2>
       <div class="sub" style="color:var(--muted);">Escolhe o que quer apagar. Isso é permanente — não tem como desfazer.</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0;">
@@ -408,6 +408,10 @@
     document.getElementById("whoami").textContent = perfilSnap.data().nome || matricula;
     document.getElementById("dataHoje").textContent =
       new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+    if (perfilSnap.data().oculto === true) {
+      document.getElementById("secaoZonaPerigo").style.display = "";
+    }
   });
 
   document.getElementById("btnLogout").addEventListener("click", async () => {
