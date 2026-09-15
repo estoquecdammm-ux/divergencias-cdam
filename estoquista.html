@@ -29,7 +29,7 @@
   .nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(232,163,61,0.06);}
   .nav-item:hover{color:var(--text);}
 
-  main{flex:1;padding:28px 36px;max-width:1180px;}
+  main{flex:1;padding:28px 36px;max-width:100%;min-width:0;}
   header.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
   header.top h1{font-size:22px;margin:0 0 4px 0;font-weight:600;}
   header.top .meta{color:var(--muted);font-size:13px;}
@@ -45,6 +45,10 @@
   .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
   .kpi .num{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;}
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  .kpi-com-filtro select{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;
+    padding:4px 8px;color:var(--muted);font-size:11px;font-family:inherit;margin-bottom:8px;
+  }
   .kpi.falta .num{color:#e08979;} .kpi.sobra .num{color:#8ec1e6;} .kpi.ok .num{color:#8fd6ab;}
   .dropzone.dragover{border-color:var(--accent);background:rgba(232,163,61,0.08);color:var(--text);}
   .dropzone .accent{color:var(--accent);font-weight:600;}
@@ -119,7 +123,13 @@
 
   <section id="secao-minhas" class="secao">
     <div class="kpi-row">
-      <div class="kpi"><div class="num" id="kpiValorInventario">—</div><div class="lbl">Valor total do inventário (hoje)</div></div>
+      <div class="kpi kpi-com-filtro">
+        <select id="filtroGrupoValores">
+          <option value="__todos__">Todos os grupos</option>
+        </select>
+        <div class="num" id="kpiValorInventario">—</div>
+        <div class="lbl">Valor total do inventário (hoje)</div>
+      </div>
       <div class="kpi falta"><div class="num" id="kpiValorFalta">—</div><div class="lbl">Valor em falta (hoje)</div></div>
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
       <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
@@ -312,6 +322,12 @@
     grupoAtivo = meuUsuario.grupos[0] || null;
     renderGroupTabs();
     watchDivergencias();
+
+    // popula o filtro de grupo das caixinhas de valor ("Todos os grupos" + individuais)
+    const filtroSel = document.getElementById("filtroGrupoValores");
+    filtroSel.innerHTML = `<option value="__todos__">Todos os grupos</option>` +
+      meuUsuario.grupos.map(g => `<option value="${g}">${g}</option>`).join("");
+    filtroSel.addEventListener("change", renderValoresKpi);
   });
 
   document.getElementById("btnLogout").addEventListener("click", async () => {
@@ -567,29 +583,38 @@
   }
 
   function renderValoresKpi() {
-    const resumo = resumoHojeCache.find(r => r.grupo === grupoAtivo);
-    const solDoGrupo = solucionadosCache.filter(d => d.grupo === grupoAtivo);
-    const divergenciasResolvidasManual = divergenciasCache.filter(d => d.grupo === grupoAtivo && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial"));
+    const filtroEl = document.getElementById("filtroGrupoValores");
+    const filtro = filtroEl ? filtroEl.value : "__todos__";
+    const gruposEscopo = filtro === "__todos__" ? meuUsuario.grupos : [filtro];
+
+    const resumosEscopo = resumoHojeCache.filter(r => gruposEscopo.includes(r.grupo));
+    const totalInv = resumosEscopo.reduce((s, r) => s + (r.totalInventario || 0), 0);
+    const totalVF = resumosEscopo.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
+    const totalVS = resumosEscopo.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    const temResumo = resumosEscopo.length > 0;
+
+    const solDoEscopo = solucionadosCache.filter(d => gruposEscopo.includes(d.grupo));
+    const divergenciasResolvidasManual = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo) && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial"));
     const totalResolvido =
-      solDoGrupo.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
+      solDoEscopo.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
       divergenciasResolvidasManual.reduce((s, d) => s + (Math.abs(d.valor || 0) - valorRestante(d)), 0);
-    document.getElementById("kpiValorInventario").textContent = resumo ? formatBRL(resumo.totalInventario) : "—";
-    document.getElementById("kpiValorFalta").textContent = resumo ? formatBRL(resumo.totalValorFalta) : "—";
-    document.getElementById("kpiValorSobra").textContent = resumo ? formatBRL(resumo.totalValorSobra) : "—";
+
+    document.getElementById("kpiValorInventario").textContent = temResumo ? formatBRL(totalInv) : "—";
+    document.getElementById("kpiValorFalta").textContent = temResumo ? formatBRL(totalVF) : "—";
+    document.getElementById("kpiValorSobra").textContent = temResumo ? formatBRL(totalVS) : "—";
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
-    renderResumoCFR(resumo);
+    renderResumoCFR(gruposEscopo, totalInv, totalVF, totalVS);
   }
 
-  function renderResumoCFR(resumo) {
+  function renderResumoCFR(gruposEscopo, totalInvCong, totalVFCong, totalVSCong) {
     const tbody = document.getElementById("resumoCFRBody");
     if (!tbody) return;
-    const totalInvCong = resumo ? (resumo.totalInventario || 0) : 0;
-    const congFalta = resumo ? Math.abs(resumo.totalValorFalta || 0) : 0;
-    const congSobra = resumo ? (resumo.totalValorSobra || 0) : 0;
+    const congFalta = Math.abs(totalVFCong || 0);
+    const congSobra = totalVSCong || 0;
 
-    const divsDoGrupo = divergenciasCache.filter(d => d.grupo === grupoAtivo);
-    const fechFalta = divsDoGrupo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0);
-    const fechSobra = divsDoGrupo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0);
+    const divsDoEscopo = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo));
+    const fechFalta = divsDoEscopo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0);
+    const fechSobra = divsDoEscopo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0);
 
     const congDiv = congFalta + congSobra;
     const fechDiv = fechFalta + fechSobra;
@@ -752,14 +777,47 @@
         return;
       }
 
-      const ws = XLSX.utils.json_to_sheet(linhas);
+      // ---- Resumo (aba Fechamento) — mesma lógica do card Congelado x Fechamento x Redução ----
+      const resumoSnap = await getDocs(query(collection(db, "div_resumo_diario"), where("data", "==", dataEscolhida), where("grupo", "==", grupoEscolhido)));
+      const resumoDia = resumoSnap.docs[0] ? resumoSnap.docs[0].data() : null;
+      const totalInvCong = resumoDia ? (resumoDia.totalInventario || 0) : 0;
+      const congFalta = resumoDia ? Math.abs(resumoDia.totalValorFalta || 0) : 0;
+      const congSobra = resumoDia ? (resumoDia.totalValorSobra || 0) : 0;
+
+      const todasDivGrupo = Array.from(mapaDiv.values());
+      const fechFalta = todasDivGrupo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0);
+      const fechSobra = todasDivGrupo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0);
+
+      const congDiv = congFalta + congSobra;
+      const fechDiv = fechFalta + fechSobra;
+      const reducaoDiv = congDiv - fechDiv;
+      const divPercCong = totalInvCong ? (congDiv / totalInvCong) * 100 : 0;
+      const divPercFech = totalInvCong ? (fechDiv / totalInvCong) * 100 : 0;
+      const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
+
+      const linhasFechamento = [
+        { Metrica: "Inventário", Congelado: totalInvCong, Fechamento: totalInvCong, Reducao: 0 },
+        { Metrica: "Falta", Congelado: congFalta, Fechamento: fechFalta, Reducao: congFalta - fechFalta },
+        { Metrica: "Sobra", Congelado: congSobra, Fechamento: fechSobra, Reducao: congSobra - fechSobra },
+        { Metrica: "Divergência", Congelado: congDiv, Fechamento: fechDiv, Reducao: reducaoDiv },
+        { Metrica: "Div %", Congelado: divPercCong.toFixed(2) + "%", Fechamento: divPercFech.toFixed(2) + "%", Reducao: (divPercCong - divPercFech).toFixed(2) + "%" },
+        { Metrica: "Acurácia", Congelado: (100 - divPercCong).toFixed(2) + "%", Fechamento: (100 - divPercFech).toFixed(2) + "%", Reducao: (divPercFech - divPercCong).toFixed(2) + "%" },
+        { Metrica: "Redução %", Congelado: "—", Fechamento: "—", Reducao: reducaoPerc.toFixed(2) + "%" }
+      ];
+
+      const linhasFalta = linhas.filter(l => l.falta !== 0);
+      const linhasSobra = linhas.filter(l => l.sobra !== 0);
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Divergencias");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), "Todos");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasFalta), "Falta");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasSobra), "Sobra");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasFechamento), "Fechamento");
       const nomeArquivo = `divergencias_${grupoEscolhido.replace(/[^a-zA-Z0-9]+/g, "_")}_${dataEscolhida}.xlsx`;
       XLSX.writeFile(wb, nomeArquivo);
 
       statusEl.className = "import-status show ok";
-      statusEl.textContent = `Exportado: ${linhas.length} linhas.`;
+      statusEl.textContent = `Exportado: ${linhas.length} linhas (${linhasFalta.length} faltas, ${linhasSobra.length} sobras) em 4 abas.`;
     } catch (err) {
       console.error(err);
       statusEl.className = "import-status show err";
