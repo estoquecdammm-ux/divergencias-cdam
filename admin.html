@@ -176,7 +176,7 @@
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
       <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
     </div>
-    <div class="soon-note">O filtro de grupo (dentro da caixa de inventário) afeta as 4 caixas de valor acima. Valores de hoje somam só os grupos que já importaram o CSV do WISWEB nesta data.</div>
+    <div class="soon-note">O filtro de grupo (dentro da caixa de inventário) afeta todas as caixas da página — tanto as contagens quanto os valores. Selecionando "Todos os grupos", volta a somar tudo.</div>
   </section>
 
   <section id="secao-grupo-detalhe" class="secao" style="display:none;">
@@ -502,13 +502,14 @@
     }
     const grupoFiltro = filtroSel ? filtroSel.value : "";
 
-    // KPIs de quantidade — sempre globais (a página inicial agora só mostra o total geral)
-    const nFalta = divergenciasCache.filter(d => d.tipo === "falta").length;
-    const nSobra = divergenciasCache.filter(d => d.tipo === "sobra").length;
-    const nInversao = divergenciasCache.filter(d => d.situacao === "inversao").length;
-    const nComJust = divergenciasCache.filter(d => d.justificativa).length;
+    // KPIs de quantidade — respeitam o mesmo filtro de grupo das caixas de valor
+    const divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
+    const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
+    const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
+    const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    const nSemGrupo = grupoFiltro ? 0 : divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
     document.getElementById("kpiFalta").textContent = nFalta;
     document.getElementById("kpiSobra").textContent = nSobra;
     document.getElementById("kpiInversao").textContent = nInversao;
