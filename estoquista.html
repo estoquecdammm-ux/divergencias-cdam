@@ -141,7 +141,7 @@
 
     <div class="card">
       <h2>Resumo — Congelado x Fechamento x Redução</h2>
-      <div class="sub">Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido.</div>
+      <div class="sub" id="resumoCFRsub">Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido.</div>
       <table>
         <thead><tr><th></th><th>Congelado</th><th>Fechamento</th><th>Redução</th></tr></thead>
         <tbody id="resumoCFRBody"></tbody>
@@ -642,18 +642,19 @@
     document.getElementById("kpiValorFalta").textContent = temResumo ? formatBRL(totalVF) : "—";
     document.getElementById("kpiValorSobra").textContent = temResumo ? formatBRL(totalVS) : "—";
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
-    renderResumoCFR(gruposEscopo, totalInv, totalVF, totalVS);
+    renderResumoCFR(gruposEscopo, totalInv, totalVF, totalVS, temResumo);
   }
 
-  function renderResumoCFR(gruposEscopo, totalInvCong, totalVFCong, totalVSCong) {
+  function renderResumoCFR(gruposEscopo, totalInvCong, totalVFCong, totalVSCong, temImportacaoHoje) {
     const tbody = document.getElementById("resumoCFRBody");
     if (!tbody) return;
     const congFalta = Math.abs(totalVFCong || 0);
     const congSobra = totalVSCong || 0;
 
+    // Se ninguém importou o CSV de hoje, o Fechamento também fica zerado (não compara com dado vivo desatualizado)
     const divsDoEscopo = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo));
-    const fechFalta = divsDoEscopo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0);
-    const fechSobra = divsDoEscopo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0);
+    const fechFalta = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0) : 0;
+    const fechSobra = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0) : 0;
 
     const congDiv = congFalta + congSobra;
     const fechDiv = fechFalta + fechSobra;
@@ -663,6 +664,13 @@
     const divPercCong = totalInvCong ? (congDiv / totalInvCong) * 100 : 0;
     const divPercFech = totalInvCong ? (fechDiv / totalInvCong) * 100 : 0;
     const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
+
+    const subEl = document.getElementById("resumoCFRsub");
+    if (subEl) {
+      subEl.textContent = temImportacaoHoje
+        ? "Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido."
+        : "Ninguém importou o CSV de hoje ainda pra esse escopo — os valores ficam travados em R$ 0,00 até a próxima importação.";
+    }
 
     const linha = (label, cong, fech, red, isPerc) => `
       <tr>

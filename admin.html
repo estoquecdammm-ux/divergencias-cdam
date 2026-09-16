@@ -725,10 +725,14 @@
     const tbody = document.getElementById("resumoCFRBody");
     if (!tbody) return;
 
+    // Se ninguém importou o CSV de hoje pro escopo selecionado, não tem "Congelado" de hoje —
+    // então o Fechamento também fica zerado/travado, em vez de comparar com dado vivo desatualizado.
+    const temImportacaoHoje = resumosFiltrados && resumosFiltrados.length > 0;
+
     // Fechamento = valores AO VIVO agora, usando o valor restante real de cada item
     const divsBase = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
-    const fechFalta = divsBase.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0);
-    const fechSobra = divsBase.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0);
+    const fechFalta = temImportacaoHoje ? divsBase.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0) : 0;
+    const fechSobra = temImportacaoHoje ? divsBase.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0) : 0;
 
     const congFalta = Math.abs(totalVFCong);
     const congSobra = totalVSCong;
@@ -741,6 +745,13 @@
     const divPercCong = totalInvCong ? (congDiv / totalInvCong) * 100 : 0;
     const divPercFech = totalInvCong ? (fechDiv / totalInvCong) * 100 : 0;
     const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
+
+    const subEl = document.getElementById("resumoCFRsub");
+    if (subEl) {
+      subEl.textContent = temImportacaoHoje
+        ? "Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido."
+        : "Ninguém importou o CSV de hoje ainda pra esse escopo — os valores ficam travados em R$ 0,00 até a próxima importação.";
+    }
 
     const linha = (label, cong, fech, red, isPerc) => `
       <tr>
