@@ -587,33 +587,49 @@
   // ---------- OUVIR DIVERGÊNCIAS AO VIVO (só dos meus grupos) ----------
   function watchDivergencias() {
     if (!meuUsuario.grupos.length) return;
-    const gruposQuery = meuUsuario.grupos.slice(0, 10); // limite do "in" do Firestore
-    const q = query(collection(db, "div_divergencias"), where("grupo", "in", gruposQuery));
-    onSnapshot(q, (snap) => {
-      divergenciasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderGroupTabs();
-      renderStateRow();
-      renderTable();
-      renderValoresKpi();
-    }, (err) => {
-      console.error("Erro carregando divergências:", err);
-      document.getElementById("tableBody").innerHTML =
-        `<tr class="empty-row"><td colspan="15" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
+    // Firestore limita "where in" a 10 valores por consulta — com mais de 10
+    // grupos atribuídos ao usuário, divide em várias consultas (uma por lote
+    // de 10) e mescla o resultado de cada uma em tempo real. Sem isso, grupos
+    // além do 10º simplesmente NUNCA apareciam na tela pro usuário.
+    const chunks = [];
+    for (let i = 0; i < meuUsuario.grupos.length; i += 10) {
+      chunks.push(meuUsuario.grupos.slice(i, i + 10));
+    }
+    const divPorChunk = chunks.map(() => []);
+    const solPorChunk = chunks.map(() => []);
+    const resumoPorChunk = chunks.map(() => []);
+
+    chunks.forEach((gruposChunk, idx) => {
+      const q = query(collection(db, "div_divergencias"), where("grupo", "in", gruposChunk));
+      onSnapshot(q, (snap) => {
+        divPorChunk[idx] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        divergenciasCache = [].concat(...divPorChunk);
+        renderGroupTabs();
+        renderStateRow();
+        renderTable();
+        renderValoresKpi();
+      }, (err) => {
+        console.error("Erro carregando divergências:", err);
+        document.getElementById("tableBody").innerHTML =
+          `<tr class="empty-row"><td colspan="15" style="color:#e08979;">Erro ao carregar dados: ${err.message}. Atualiza a página; se continuar, avisa o admin.</td></tr>`;
+      });
+
+      const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposChunk));
+      onSnapshot(qSol, (snap) => {
+        solPorChunk[idx] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        solucionadosCache = [].concat(...solPorChunk);
+        renderStateRow();
+        renderTable();
+        renderValoresKpi();
+      }, (err) => console.error("Erro carregando solucionados:", err));
+
+      const qResumo = query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposChunk), where("data", "==", HOJE_STR));
+      onSnapshot(qResumo, (snap) => {
+        resumoPorChunk[idx] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        resumoHojeCache = [].concat(...resumoPorChunk);
+        renderValoresKpi();
+      }, (err) => console.error("Erro carregando resumo diário:", err));
     });
-
-    const qSol = query(collection(db, "div_solucionados"), where("grupo", "in", gruposQuery));
-    onSnapshot(qSol, (snap) => {
-      solucionadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderStateRow();
-      renderTable();
-      renderValoresKpi();
-    }, (err) => console.error("Erro carregando solucionados:", err));
-
-    const qResumo = query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposQuery), where("data", "==", HOJE_STR));
-    onSnapshot(qResumo, (snap) => {
-      resumoHojeCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderValoresKpi();
-    }, (err) => console.error("Erro carregando resumo diário:", err));
   }
 
   function formatBRL(v) {
@@ -622,6 +638,18 @@
 
   // Escapa texto antes de jogar em innerHTML — código/descrição vêm do CSV do WISWEB
   // e justificativa/nome vêm de digitação livre, então nunca são confiáveis como HTML.
+  // Firestore limita "where in" a 10 valores por consulta. Essa função divide
+  // a lista de grupos em lotes de 10, dispara uma consulta por lote e junta
+  // tudo — usada em toda consulta pontual (não em tempo real) filtrada por grupo.
+  async function getDocsPorGrupos(nomeColecao, grupos, ...outrasCondicoes) {
+    const chunks = [];
+    for (let i = 0; i < grupos.length; i += 10) chunks.push(grupos.slice(i, i + 10));
+    const resultados = await Promise.all(chunks.map(chunk =>
+      getDocs(query(collection(db, nomeColecao), where("grupo", "in", chunk), ...outrasCondicoes))
+    ));
+    return resultados.flatMap(snap => snap.docs);
+  }
+
   function esc(v) {
     if (v === null || v === undefined) return "";
     return String(v).replace(/[&<>"']/g, c => ({
@@ -719,9 +747,8 @@
     if (select.dataset.carregado === "1") return; // só busca uma vez por sessão
     select.dataset.carregado = "1";
 
-    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
-    const snap = await getDocs(query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposDoUsuario)));
-    const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
+    const docs = await getDocsPorGrupos("div_resumo_diario", meuUsuario.grupos);
+    const dias = [...new Set(docs.map(d => d.data().data))].sort().reverse();
 
     select.innerHTML = `<option value="">Selecione o dia...</option>` +
       dias.map(d => {
@@ -740,13 +767,8 @@
     }
     document.getElementById("histTableBody").innerHTML = `<tr class="empty-row"><td colspan="12">Carregando...</td></tr>`;
 
-    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
-    const snap = await getDocs(query(
-      collection(db, "div_historico"),
-      where("data", "==", dataEscolhida),
-      where("grupo", "in", gruposDoUsuario)
-    ));
-    histDadosDoDia = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const docs = await getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", "==", dataEscolhida));
+    histDadosDoDia = docs.map(d => ({ id: d.id, ...d.data() }));
     histGrupoAtivo = meuUsuario.grupos[0] || null;
     histPagina = 1;
     histEstadoAtivo = "todos";
@@ -769,9 +791,8 @@
     if (selectDia.dataset.carregado === "1") return;
     selectDia.dataset.carregado = "1";
 
-    const gruposDoUsuario = meuUsuario.grupos.slice(0, 10);
-    const snap = await getDocs(query(collection(db, "div_resumo_diario"), where("grupo", "in", gruposDoUsuario)));
-    const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
+    const docs = await getDocsPorGrupos("div_resumo_diario", meuUsuario.grupos);
+    const dias = [...new Set(docs.map(d => d.data().data))].sort().reverse();
 
     selectDia.innerHTML = dias.map(d => {
       const [ano, mes, dia] = d.split("-");
@@ -1118,10 +1139,16 @@
       statusEl.textContent = "Buscando dados atuais no banco...";
 
       // Busca de UMA VEZ todas as divergências já existentes dos meus grupos (em vez de 1 consulta por linha do CSV)
-      const gruposQuery10 = gruposDoUsuario.slice(0, 10);
-      const divExistentesSnap = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "in", gruposQuery10)));
+      // OBS: Firestore limita "where in" a 10 valores por consulta, então busca em lotes de 10
+      // e junta tudo — assim funciona mesmo se o usuário tiver mais de 10 grupos atribuídos
+      // (sem isso, os grupos além do 10º nunca "achavam" a divergência existente e a
+      // justificativa já preenchida era apagada a cada reimportação do CSV)
       const mapaDivergencias = new Map();
-      divExistentesSnap.docs.forEach(d => mapaDivergencias.set(d.id, d.data()));
+      for (let i = 0; i < gruposDoUsuario.length; i += 10) {
+        const lote = gruposDoUsuario.slice(i, i + 10);
+        const snapLote = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "in", lote)));
+        snapLote.docs.forEach(d => mapaDivergencias.set(d.id, d.data()));
+      }
 
       statusEl.textContent = "Processando linhas...";
 
