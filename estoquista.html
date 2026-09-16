@@ -1100,7 +1100,11 @@
     const resumoAntes = {}; // { grupoId: dadosAntigos|null }
 
     try {
-      const text = await file.text();
+      let text = await file.text();
+      // Remove o BOM (marcação invisível de UTF-8) do início do arquivo, se
+      // existir — sem isso, a primeira coluna do cabeçalho vira "\uFEFFcodigo"
+      // em vez de "codigo", e o import falha achando que a coluna não existe.
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
       const linhas = text.split(/\r?\n/).filter(l => l.trim() !== "");
       if (linhas.length < 2) throw new Error("Arquivo vazio ou sem dados.");
 
