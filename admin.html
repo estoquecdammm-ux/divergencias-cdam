@@ -512,8 +512,8 @@
     if (gruposCache.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="3">Nenhum grupo cadastrado ainda</td></tr>`;
     } else {
-      tbody.innerHTML = gruposCache.map(g => `<tr><td>${g.nome}</td><td style="color:var(--muted);font-size:12px;">${g.dpto || "—"}</td>
-        <td><button class="btn-del" data-tipo="grupo" data-id="${g.id}">Excluir</button></td></tr>`).join("");
+      tbody.innerHTML = gruposCache.map(g => `<tr><td>${esc(g.nome)}</td><td style="color:var(--muted);font-size:12px;">${esc(g.dpto) || "—"}</td>
+        <td><button class="btn-del" data-tipo="grupo" data-id="${esc(g.id)}">Excluir</button></td></tr>`).join("");
     }
     renderChecksGrupos();
     renderNavGrupos();
@@ -524,7 +524,7 @@
     const wrap = document.getElementById("checksGrupos");
     wrap.innerHTML = gruposCache.map(g => `
       <label class="check-pill">
-        <input type="checkbox" value="${g.nome}"> ${g.nome}
+        <input type="checkbox" value="${esc(g.nome)}"> ${esc(g.nome)}
       </label>
     `).join("") || `<span style="color:var(--muted);font-size:12px;">Cadastre um grupo primeiro</span>`;
   }
@@ -538,14 +538,14 @@
       tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Nenhum usuário cadastrado</td></tr>`;
     } else {
       const rows = usuariosCache.map(u => {
-        const grupos = (u.grupos || []).map(g => `<span class="chip assigned">${g}</span>`).join("");
+        const grupos = (u.grupos || []).map(g => `<span class="chip assigned">${esc(g)}</span>`).join("");
         const papel = u.role === "admin"
           ? `<span class="role-admin">● admin</span>`
           : `<span class="role-estoquista">○ estoquista</span>`;
-        return `<tr><td>${u.matricula}</td><td>${u.nome || "—"}</td><td>${grupos || "—"}</td><td>${papel}</td>
+        return `<tr><td>${esc(u.matricula)}</td><td>${esc(u.nome) || "—"}</td><td>${grupos || "—"}</td><td>${papel}</td>
           <td style="white-space:nowrap;">
-            <button class="btn-del" style="border-color:var(--border);color:var(--text);margin-right:6px;" data-tipo="editar-usuario" data-id="${u.matricula}">Editar</button>
-            <button class="btn-del" data-tipo="usuario" data-id="${u.matricula}">Excluir</button>
+            <button class="btn-del" style="border-color:var(--border);color:var(--text);margin-right:6px;" data-tipo="editar-usuario" data-id="${esc(u.matricula)}">Editar</button>
+            <button class="btn-del" data-tipo="usuario" data-id="${esc(u.matricula)}">Excluir</button>
           </td></tr>`;
       });
       tbody.innerHTML = rows.join("");
@@ -608,13 +608,22 @@
     return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
+  // Escapa texto antes de jogar em innerHTML — código/descrição vêm do CSV do WISWEB
+  // e justificativa/nome vêm de digitação livre, então nunca são confiáveis como HTML.
+  function esc(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
   function renderDashboard() {
     // popula o filtro de grupo (só se ainda não tiver as opções certas)
     const filtroSel = document.getElementById("filtroGrupoVisaoGeral");
     if (filtroSel && filtroSel.dataset.populado !== String(gruposCache.length)) {
       const valorAtual = filtroSel.value;
       filtroSel.innerHTML = `<option value="">Todos os grupos</option>` +
-        gruposCache.map(g => `<option value="${g.nome}">${g.nome}</option>`).join("");
+        gruposCache.map(g => `<option value="${esc(g.nome)}">${esc(g.nome)}</option>`).join("");
       filtroSel.value = valorAtual;
       filtroSel.dataset.populado = String(gruposCache.length);
     }
@@ -666,7 +675,7 @@
     }
     tbody.innerHTML = estoquistas.map(u => {
       const meusGrupos = u.grupos || [];
-      const gruposChips = meusGrupos.map(g => `<span class="chip assigned">${g}</span>`).join("");
+      const gruposChips = meusGrupos.map(g => `<span class="chip assigned">${esc(g)}</span>`).join("");
 
       // última importação: a mais recente entre os resumos de hoje dos grupos dessa pessoa
       const resumosDaPessoa = resumoHojeCache.filter(r => meusGrupos.includes(r.grupo));
@@ -702,7 +711,7 @@
 
       return `
         <tr>
-          <td>${u.nome || u.matricula}</td>
+          <td>${esc(u.nome) || esc(u.matricula)}</td>
           <td>${gruposChips}</td>
           <td>${ultimaImportacao}</td>
           <td>
@@ -726,8 +735,8 @@
     const wrap = document.getElementById("navGrupos");
     if (!wrap) return;
     wrap.innerHTML = gruposCache.map(g => `
-      <a class="nav-item ${grupoDetalheAtivo === g.nome ? 'active' : ''}" href="#" data-secao="grupo-detalhe" data-grupo-nome="${g.nome}">
-        <span class="ic">▫</span><span>${g.nome}</span>
+      <a class="nav-item ${grupoDetalheAtivo === g.nome ? 'active' : ''}" href="#" data-secao="grupo-detalhe" data-grupo-nome="${esc(g.nome)}">
+        <span class="ic">▫</span><span>${esc(g.nome)}</span>
       </a>`).join("");
   }
 
@@ -843,8 +852,8 @@
              <tbody>
                ${linhas.map(d => `
                  <tr>
-                   <td class="sku">${d.codigo}</td>
-                   <td>${d.descricao || ""}</td>
+                   <td class="sku">${esc(d.codigo)}</td>
+                   <td>${esc(d.descricao)}</td>
                    <td class="qty ${d.tipo} col-num">${d.quantidade}</td>
                    <td class="col-num" style="color:var(--accent);font-weight:600;">${d.quantidadeAjustada ?? "—"}</td>
                    <td class="col-num">${d.sabium01 ?? "—"}</td>
@@ -855,8 +864,8 @@
                    <td class="col-num">${d.reserva ?? "—"}</td>
                    <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
                    <td>${d.situacao ? `<span style="color:${CORES_SITUACAO[d.situacao]};font-weight:600;font-size:11.5px;">${LABELS_SITUACAO[d.situacao]}</span>` : `<span style="color:var(--muted);">—</span>`}</td>
-                   <td style="color:${d.justificativa ? 'var(--text)' : 'var(--accent)'};white-space:normal;line-height:1.4;">${d.justificativa || 'sem justificativa'}</td>
-                   <td style="color:var(--muted);font-size:11px;">${d.ultimaEdicaoPor ? `${d.ultimaEdicaoPor}<br>${d.ultimaEdicaoEm?.toDate ? d.ultimaEdicaoEm.toDate().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}` : "—"}</td>
+                   <td style="color:${d.justificativa ? 'var(--text)' : 'var(--accent)'};white-space:normal;line-height:1.4;">${d.justificativa ? esc(d.justificativa) : 'sem justificativa'}</td>
+                   <td style="color:var(--muted);font-size:11px;">${d.ultimaEdicaoPor ? `${esc(d.ultimaEdicaoPor)}<br>${d.ultimaEdicaoEm?.toDate ? d.ultimaEdicaoEm.toDate().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}` : "—"}</td>
                  </tr>`).join("")}
              </tbody>
            </table>
@@ -888,7 +897,7 @@
 
     if (selectGrupo.dataset.populado !== String(gruposCache.length)) {
       selectGrupo.innerHTML = `<option value="">Todos os grupos</option>` +
-        gruposCache.map(g => `<option value="${g.nome}">${g.nome}</option>`).join("");
+        gruposCache.map(g => `<option value="${esc(g.nome)}">${esc(g.nome)}</option>`).join("");
       selectGrupo.dataset.populado = String(gruposCache.length);
     }
 
@@ -995,9 +1004,9 @@
 
     tbody.innerHTML = linhas.map(d => `
       <tr>
-        <td class="sku">${d.codigo}</td>
-        <td>${d.descricao || ""}</td>
-        <td>${d.grupo || ""}</td>
+        <td class="sku">${esc(d.codigo)}</td>
+        <td>${esc(d.descricao)}</td>
+        <td>${esc(d.grupo)}</td>
         <td class="qty falta col-num">${d.falta || 0}</td>
         <td class="qty sobra col-num">${d.sobra || 0}</td>
         <td class="col-num">${d.sabium01 ?? "—"}</td>
@@ -1024,7 +1033,7 @@
 
     if (selectGrupo.dataset.populado !== String(gruposCache.length)) {
       selectGrupo.innerHTML = `<option value="">Todos os grupos</option>` +
-        gruposCache.map(g => `<option value="${g.nome}">${g.nome}</option>`).join("");
+        gruposCache.map(g => `<option value="${esc(g.nome)}">${esc(g.nome)}</option>`).join("");
       selectGrupo.dataset.populado = String(gruposCache.length);
     }
 
@@ -1073,12 +1082,20 @@
       const mapaDiv = new Map();
       divSnap.docs.forEach(d => mapaDiv.set(`${d.data().grupo}__${d.data().codigo}`, d.data()));
 
+      // Blinda contra "Formula/CSV injection": se um texto (justificativa, descrição, etc.)
+      // começar com =, +, -, @ (ou tab/CR), o Excel pode interpretar como fórmula ao abrir.
+      // Prefixa com apóstrofo pra forçar texto puro.
+      function blindarFormula(v) {
+        if (typeof v !== "string") return v;
+        return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+      }
+
       const linhas = historico.map(h => {
         const div = mapaDiv.get(`${h.grupo}__${h.codigo}`);
         return {
-          codigo: h.codigo,
-          descricao: h.descricao,
-          dpto: mapaDpto.get(h.grupo) || h.grupo,
+          codigo: blindarFormula(h.codigo),
+          descricao: blindarFormula(h.descricao),
+          dpto: blindarFormula(mapaDpto.get(h.grupo) || h.grupo),
           situacaoproduto: h.situacaoproduto || "",
           sabium01: h.sabium01 || 0,
           sabium83: h.sabium83 || 0,
@@ -1093,7 +1110,7 @@
           vlrfalta: h.vlrfalta || 0,
           vlrsobra: h.vlrsobra || 0,
           inventario: h.inventario || 0,
-          justificativa: div ? (div.justificativa || "") : "",
+          justificativa: blindarFormula(div ? (div.justificativa || "") : ""),
           situacao: div ? (div.situacao || "") : "",
           quantidadeAjustada: div ? (div.quantidadeAjustada ?? "") : ""
         };

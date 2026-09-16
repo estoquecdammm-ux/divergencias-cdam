@@ -345,7 +345,7 @@
     // popula o filtro de grupo das caixinhas de valor ("Todos os grupos" + individuais)
     const filtroSel = document.getElementById("filtroGrupoValores");
     filtroSel.innerHTML = `<option value="__todos__">Todos os grupos</option>` +
-      meuUsuario.grupos.map(g => `<option value="${g}">${g}</option>`).join("");
+      meuUsuario.grupos.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
     filtroSel.addEventListener("change", renderValoresKpi);
   });
 
@@ -363,7 +363,7 @@
     }
     wrap.innerHTML = meuUsuario.grupos.map(g => {
       const count = divergenciasCache.filter(d => d.grupo === g).length;
-      return `<div class="gtab ${g === grupoAtivo ? 'active' : ''}" data-grupo="${g}">${g}<span class="count">${count}</span></div>`;
+      return `<div class="gtab ${g === grupoAtivo ? 'active' : ''}" data-grupo="${esc(g)}">${esc(g)}<span class="count">${count}</span></div>`;
     }).join("");
     wrap.querySelectorAll(".gtab").forEach(el => {
       el.addEventListener("click", () => {
@@ -428,8 +428,8 @@
       const solRows = solRowsTodos.slice((paginaTabela - 1) * ITENS_POR_PAGINA, paginaTabela * ITENS_POR_PAGINA);
       tbody.innerHTML = solRows.map(d => `
         <tr>
-          <td class="sku">${d.codigo}</td>
-          <td>${d.descricao || ""}</td>
+          <td class="sku">${esc(d.codigo)}</td>
+          <td>${esc(d.descricao)}</td>
           <td class="col-num"><span class="badge ${d.tipoAnterior}">${d.tipoAnterior === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipoAnterior} col-num">${d.quantidadeAnterior}</td>
           <td class="col-num">—</td>
@@ -481,12 +481,12 @@
     tbody.innerHTML = rows.map(d => {
       const diffTag = d.mudouQuantidade ? `<span class="diff-tag">mudou de qtd</span>` : "";
       const editInfo = d.ultimaEdicaoPor
-        ? `${d.ultimaEdicaoPor === meuUsuario.matricula ? "Você" : d.ultimaEdicaoPor} · ${formatWhen(d.ultimaEdicaoEm)}`
+        ? `${d.ultimaEdicaoPor === meuUsuario.matricula ? "Você" : esc(d.ultimaEdicaoPor)} · ${formatWhen(d.ultimaEdicaoEm)}`
         : "—";
       const congelado = congelamentoAtivo && (!d.data || d.data !== HOJE_STR);
       const inputHtml = congelado
-        ? `<input class="just" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
-        : `<input class="just" data-id="${d.id}" value="${(d.justificativa||"").replace(/"/g,'&quot;')}" placeholder="Sem justificativa ainda">`;
+        ? `<input class="just" value="${esc(d.justificativa)}" placeholder="Congelado" disabled title="Congelado — importe o CSV de hoje pra liberar edição de novo">`
+        : `<input class="just" data-id="${esc(d.id)}" value="${esc(d.justificativa)}" placeholder="Sem justificativa ainda">`;
       const freezeTag = congelado ? `<span class="diff-tag" style="background:rgba(139,151,166,0.15);color:var(--muted);">congelado</span>` : "";
 
       const corSituacao = d.situacao ? CORES_SITUACAO[d.situacao] : null;
@@ -497,19 +497,19 @@
         ? `<select disabled style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--muted);font-size:12px;">
              <option>${OPCOES_SITUACAO.find(o => o.v === (d.situacao||""))?.l || "—"}</option>
            </select>`
-        : `<select class="sel-situacao" data-id="${d.id}" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;font-size:12px;font-family:inherit;${estiloSelect}">
+        : `<select class="sel-situacao" data-id="${esc(d.id)}" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;font-size:12px;font-family:inherit;${estiloSelect}">
              ${OPCOES_SITUACAO.map(o => `<option value="${o.v}" ${d.situacao === o.v || (!d.situacao && o.v === "") ? "selected" : ""}>${o.l}</option>`).join("")}
            </select>`;
 
       const qtdAjustadaHtml = congelado
         ? `<input type="text" value="${d.quantidadeAjustada ?? ""}" placeholder="—" disabled style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--muted);font-size:12px;">`
-        : `<input type="number" step="any" class="qtd-ajustada" data-id="${d.id}" value="${d.quantidadeAjustada ?? ""}" placeholder="—"
+        : `<input type="number" step="any" class="qtd-ajustada" data-id="${esc(d.id)}" value="${d.quantidadeAjustada ?? ""}" placeholder="—"
                  style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--accent);font-size:12px;font-family:inherit;">`;
 
       return `
         <tr>
-          <td class="sku">${d.codigo}</td>
-          <td>${d.descricao || ""} ${diffTag}${freezeTag}</td>
+          <td class="sku">${esc(d.codigo)}</td>
+          <td>${esc(d.descricao)} ${diffTag}${freezeTag}</td>
           <td class="col-num"><span class="badge ${d.tipo}">${d.tipo === "falta" ? "Falta" : "Sobra"}</span></td>
           <td class="qty ${d.tipo} col-num">${d.quantidade}</td>
           <td class="col-num">${qtdAjustadaHtml}</td>
@@ -618,6 +618,15 @@
 
   function formatBRL(v) {
     return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  // Escapa texto antes de jogar em innerHTML — código/descrição vêm do CSV do WISWEB
+  // e justificativa/nome vêm de digitação livre, então nunca são confiáveis como HTML.
+  function esc(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
   }
 
   // Calcula o valor que AINDA resta em aberto pra uma divergência, considerando a situação:
@@ -753,7 +762,7 @@
     const selectGrupo = document.getElementById("exSelectGrupo");
 
     if (selectGrupo.dataset.populado !== "1") {
-      selectGrupo.innerHTML = meuUsuario.grupos.map(g => `<option value="${g}">${g}</option>`).join("");
+      selectGrupo.innerHTML = meuUsuario.grupos.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
       selectGrupo.dataset.populado = "1";
     }
 
@@ -805,12 +814,20 @@
       const mapaDiv = new Map();
       divSnap.docs.forEach(d => mapaDiv.set(d.data().codigo, d.data()));
 
+      // Blinda contra "Formula/CSV injection": se um texto (justificativa, descrição, etc.)
+      // começar com =, +, -, @ (ou tab/CR), o Excel pode interpretar como fórmula ao abrir.
+      // Prefixa com apóstrofo pra forçar texto puro.
+      function blindarFormula(v) {
+        if (typeof v !== "string") return v;
+        return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+      }
+
       const linhas = historico.map(h => {
         const div = mapaDiv.get(h.codigo);
         return {
-          codigo: h.codigo,
-          descricao: h.descricao,
-          dpto: dptoCru,
+          codigo: blindarFormula(h.codigo),
+          descricao: blindarFormula(h.descricao),
+          dpto: blindarFormula(dptoCru),
           situacaoproduto: h.situacaoproduto || "",
           sabium01: h.sabium01 || 0,
           sabium83: h.sabium83 || 0,
@@ -825,7 +842,7 @@
           vlrfalta: h.vlrfalta || 0,
           vlrsobra: h.vlrsobra || 0,
           inventario: h.inventario || 0,
-          justificativa: div ? (div.justificativa || "") : "",
+          justificativa: blindarFormula(div ? (div.justificativa || "") : ""),
           situacao: div ? (div.situacao || "") : "",
           quantidadeAjustada: div ? (div.quantidadeAjustada ?? "") : ""
         };
@@ -893,7 +910,7 @@
     const wrap = document.getElementById("histGroupTabs");
     wrap.innerHTML = meuUsuario.grupos.map(g => {
       const count = histDadosDoDia.filter(d => d.grupo === g).length;
-      return `<div class="gtab ${g === histGrupoAtivo ? 'active' : ''}" data-grupo="${g}">${g}<span class="count">${count}</span></div>`;
+      return `<div class="gtab ${g === histGrupoAtivo ? 'active' : ''}" data-grupo="${esc(g)}">${esc(g)}<span class="count">${count}</span></div>`;
     }).join("");
     wrap.querySelectorAll(".gtab").forEach(el => {
       el.addEventListener("click", () => {
@@ -980,8 +997,8 @@
 
     tbody.innerHTML = linhas.map(d => `
       <tr>
-        <td class="sku">${d.codigo}</td>
-        <td>${d.descricao || ""}</td>
+        <td class="sku">${esc(d.codigo)}</td>
+        <td>${esc(d.descricao)}</td>
         <td class="qty falta col-num">${d.falta || 0}</td>
         <td class="qty sobra col-num">${d.sobra || 0}</td>
         <td class="col-num">${d.sabium01 ?? "—"}</td>
