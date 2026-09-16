@@ -45,6 +45,10 @@
   .import-status.show{display:block;}
   .import-status.ok{color:#8fd6ab;}
   .import-status.err{color:#e08979;}
+  .paginacao{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:12px 4px 4px 4px;}
+  .paginacao .pg-info{font-size:12px;color:var(--muted);}
+  .paginacao .pg-btn{background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .paginacao .pg-btn:disabled{opacity:.4;cursor:default;}
 
   .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px;}
   .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
@@ -253,6 +257,7 @@
         <tbody id="histTableBody"><tr class="empty-row"><td colspan="13">Escolhe um dia acima pra ver os dados.</td></tr></tbody>
       </table>
     </div>
+    <div class="paginacao" id="histPaginacaoAdmin"></div>
   </section>
 
   <section id="secao-usuarios" class="secao" style="display:none;">
@@ -436,6 +441,7 @@
 
     if (alvo === "grupo-detalhe") {
       grupoDetalheAtivo = item.dataset.grupoNome;
+      Object.keys(paginaCategoria).forEach(k => delete paginaCategoria[k]);
       document.getElementById("tituloSecao").textContent = grupoDetalheAtivo;
       renderGrupoDetalhe(grupoDetalheAtivo);
     } else {
@@ -559,6 +565,25 @@
     "resolvido-parcial": "#8b5cf6"
   };
   const LABELS_SITUACAO = { real: "Real", "em-analise": "Em análise", inversao: "Inversão", resolvido: "Resolvido", "resolvido-parcial": "Resolvido Parcial" };
+
+  const ITENS_POR_PAGINA = 50;
+  let histPaginaAdmin = 1;
+  const paginaCategoria = {}; // { tituloCategoria: numeroPagina }
+
+  function renderPaginacao(containerId, totalItens, paginaAtual, onIrPara) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (totalItens <= ITENS_POR_PAGINA) { container.innerHTML = ""; return; }
+    const totalPaginas = Math.max(1, Math.ceil(totalItens / ITENS_POR_PAGINA));
+    container.innerHTML = `
+      <span class="pg-info">Página ${paginaAtual} de ${totalPaginas} (${totalItens} itens)</span>
+      <button class="pg-btn" data-dir="-1" ${paginaAtual <= 1 ? "disabled" : ""}>‹ Anterior</button>
+      <button class="pg-btn" data-dir="1" ${paginaAtual >= totalPaginas ? "disabled" : ""}>Próxima ›</button>
+    `;
+    container.querySelectorAll(".pg-btn").forEach(b => {
+      b.addEventListener("click", () => onIrPara(paginaAtual + parseInt(b.dataset.dir)));
+    });
+  }
 
   function formatBRL(v) {
     return (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -756,9 +781,13 @@
     document.getElementById("gdValorInv").textContent = resumo ? formatBRL(resumo.totalInventario) : "—";
 
     const wrap = document.getElementById("gdTabelas");
-    wrap.innerHTML = CATEGORIAS_GRUPO.map(cat => {
-      const linhas = divsDoGrupo.filter(cat.filtro);
-      const corpo = linhas.length === 0
+    wrap.innerHTML = CATEGORIAS_GRUPO.map((cat, idx) => {
+      const linhasTodas = divsDoGrupo.filter(cat.filtro);
+      const totalPaginasCat = Math.max(1, Math.ceil(linhasTodas.length / ITENS_POR_PAGINA));
+      if (!paginaCategoria[cat.titulo] || paginaCategoria[cat.titulo] > totalPaginasCat) paginaCategoria[cat.titulo] = 1;
+      const paginaAtualCat = paginaCategoria[cat.titulo];
+      const linhas = linhasTodas.slice((paginaAtualCat - 1) * ITENS_POR_PAGINA, paginaAtualCat * ITENS_POR_PAGINA);
+      const corpo = linhasTodas.length === 0
         ? `<div class="semdiv">Nenhum item aqui</div>`
         : `<div style="overflow-x:auto;">
            <table style="width:max-content;min-width:100%;">
@@ -801,10 +830,19 @@
            </div>`;
       return `
         <div class="card" style="margin-bottom:18px;">
-          <h2 style="display:flex;justify-content:space-between;">${cat.titulo} <span style="color:var(--muted);font-size:12px;font-weight:500;">${linhas.length} item(ns)</span></h2>
+          <h2 style="display:flex;justify-content:space-between;">${cat.titulo} <span style="color:var(--muted);font-size:12px;font-weight:500;">${linhasTodas.length} item(ns)</span></h2>
           ${corpo}
+          <div class="paginacao" id="pg-cat-${idx}"></div>
         </div>`;
     }).join("");
+
+    CATEGORIAS_GRUPO.forEach((cat, idx) => {
+      const linhasTodas = divsDoGrupo.filter(cat.filtro);
+      renderPaginacao(`pg-cat-${idx}`, linhasTodas.length, paginaCategoria[cat.titulo] || 1, (p) => {
+        paginaCategoria[cat.titulo] = p;
+        renderGrupoDetalhe(nomeGrupo);
+      });
+    });
   }
 
 
@@ -865,8 +903,15 @@
 
     if (linhas.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="13">Nenhum código encontrado.</td></tr>`;
+      renderPaginacao("histPaginacaoAdmin", 0, 1, () => {});
       return;
     }
+
+    const totalFiltradoHistAdmin = linhas.length;
+    const totalPaginasHistAdmin = Math.max(1, Math.ceil(totalFiltradoHistAdmin / ITENS_POR_PAGINA));
+    if (histPaginaAdmin > totalPaginasHistAdmin) histPaginaAdmin = totalPaginasHistAdmin;
+    linhas = linhas.slice((histPaginaAdmin - 1) * ITENS_POR_PAGINA, histPaginaAdmin * ITENS_POR_PAGINA);
+
     tbody.innerHTML = linhas.map(d => `
       <tr>
         <td class="sku">${d.codigo}</td>
@@ -883,11 +928,13 @@
         <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
         <td class="col-num">${d.inventario != null ? formatBRL(d.inventario) : "—"}</td>
       </tr>`).join("");
+
+    renderPaginacao("histPaginacaoAdmin", totalFiltradoHistAdmin, histPaginaAdmin, (p) => { histPaginaAdmin = p; renderHistTableAdmin(); });
   }
 
-  document.getElementById("histSelectDia").addEventListener("change", carregarTabelaHistoricoAdmin);
-  document.getElementById("histSelectGrupo").addEventListener("change", carregarTabelaHistoricoAdmin);
-  document.getElementById("histBusca").addEventListener("input", renderHistTableAdmin);
+  document.getElementById("histSelectDia").addEventListener("change", () => { histPaginaAdmin = 1; carregarTabelaHistoricoAdmin(); });
+  document.getElementById("histSelectGrupo").addEventListener("change", () => { histPaginaAdmin = 1; carregarTabelaHistoricoAdmin(); });
+  document.getElementById("histBusca").addEventListener("input", () => { histPaginaAdmin = 1; renderHistTableAdmin(); });
 
   // ---------- EXPORTAR EXCEL (admin: grupo específico ou todos juntos) ----------
   async function inicializarExportarAdmin() {

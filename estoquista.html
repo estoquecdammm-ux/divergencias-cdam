@@ -76,6 +76,10 @@
   .state-pill.selected{border-color:currentColor;}
 
   .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow-x:auto;}
+  .paginacao{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:12px 4px 4px 4px;}
+  .paginacao .pg-info{font-size:12px;color:var(--muted);}
+  .paginacao .pg-btn{background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .paginacao .pg-btn:disabled{opacity:.4;cursor:default;}
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
   thead th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:11.5px;border-bottom:1px solid var(--border);background:var(--panel-2);}
   tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
@@ -182,6 +186,7 @@
         <tbody id="tableBody"><tr class="empty-row"><td colspan="15">Carregando...</td></tr></tbody>
       </table>
     </div>
+    <div class="paginacao" id="tablePaginacao"></div>
   </section>
 
   <section id="secao-historico" class="secao" style="display:none;">
@@ -219,6 +224,7 @@
         <tbody id="histTableBody"><tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr></tbody>
       </table>
     </div>
+    <div class="paginacao" id="histPaginacao"></div>
   </section>
 
   <section id="secao-excel" class="secao" style="display:none;">
@@ -278,6 +284,9 @@
   let meuUsuario = null; // { matricula, nome, grupos }
   let grupoAtivo = null;
   let estadoAtivo = "todos";
+  let paginaTabela = 1;
+  const ITENS_POR_PAGINA = 50;
+  let histPagina = 1;
   let divergenciasCache = [];
   let solucionadosCache = [];
   let resumoHojeCache = [];
@@ -349,6 +358,7 @@
     wrap.querySelectorAll(".gtab").forEach(el => {
       el.addEventListener("click", () => {
         grupoAtivo = el.dataset.grupo;
+        paginaTabela = 1;
         renderGroupTabs();
         renderStateRow();
         renderTable();
@@ -385,6 +395,7 @@
     wrap.querySelectorAll(".state-pill").forEach(el => {
       el.addEventListener("click", () => {
         estadoAtivo = el.dataset.estado;
+        paginaTabela = 1;
         renderStateRow();
         renderTable();
       });
@@ -396,11 +407,15 @@
     const tbody = document.getElementById("tableBody");
 
     if (estadoAtivo === "solucionados") {
-      const solRows = solucionadosCache.filter(d => d.grupo === grupoAtivo);
-      if (solRows.length === 0) {
+      const solRowsTodos = solucionadosCache.filter(d => d.grupo === grupoAtivo);
+      if (solRowsTodos.length === 0) {
         tbody.innerHTML = `<tr class="empty-row"><td colspan="15">Nenhum item solucionado ainda nesse grupo</td></tr>`;
+        renderPaginacao("tablePaginacao", 0, 1, () => {});
         return;
       }
+      const totalPaginasSol = Math.max(1, Math.ceil(solRowsTodos.length / ITENS_POR_PAGINA));
+      if (paginaTabela > totalPaginasSol) paginaTabela = totalPaginasSol;
+      const solRows = solRowsTodos.slice((paginaTabela - 1) * ITENS_POR_PAGINA, paginaTabela * ITENS_POR_PAGINA);
       tbody.innerHTML = solRows.map(d => `
         <tr>
           <td class="sku">${d.codigo}</td>
@@ -419,6 +434,7 @@
           <td style="color:var(--muted);">Valor ajustado: ${(d.valorAjustado || 0).toLocaleString("pt-BR", {style:"currency", currency:"BRL"})}</td>
           <td class="meta-edit">${formatWhen(d.resolvidoEm)}</td>
         </tr>`).join("");
+      renderPaginacao("tablePaginacao", solRowsTodos.length, paginaTabela, (p) => { paginaTabela = p; renderTable(); });
       return;
     }
 
@@ -434,8 +450,14 @@
 
     if (rows.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="15">Nenhuma divergência aqui — bom sinal!</td></tr>`;
+      renderPaginacao("tablePaginacao", 0, 1, () => {});
       return;
     }
+
+    const totalItensFiltrados = rows.length;
+    const totalPaginasTab = Math.max(1, Math.ceil(totalItensFiltrados / ITENS_POR_PAGINA));
+    if (paginaTabela > totalPaginasTab) paginaTabela = totalPaginasTab;
+    rows = rows.slice((paginaTabela - 1) * ITENS_POR_PAGINA, paginaTabela * ITENS_POR_PAGINA);
 
     const OPCOES_SITUACAO = [
       { v: "", l: "— sem classificação —" },
@@ -494,6 +516,8 @@
         </tr>`;
     }).join("");
 
+    renderPaginacao("tablePaginacao", totalItensFiltrados, paginaTabela, (p) => { paginaTabela = p; renderTable(); });
+
     tbody.querySelectorAll("select.sel-situacao").forEach(sel => {
       sel.addEventListener("change", async () => {
         const id = sel.dataset.id;
@@ -527,6 +551,21 @@
           ultimaEdicaoEm: serverTimestamp()
         }, { merge: true });
       });
+    });
+  }
+
+  function renderPaginacao(containerId, totalItens, paginaAtual, onIrPara) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (totalItens <= ITENS_POR_PAGINA) { container.innerHTML = ""; return; }
+    const totalPaginas = Math.max(1, Math.ceil(totalItens / ITENS_POR_PAGINA));
+    container.innerHTML = `
+      <span class="pg-info">Página ${paginaAtual} de ${totalPaginas} (${totalItens} itens)</span>
+      <button class="pg-btn" data-dir="-1" ${paginaAtual <= 1 ? "disabled" : ""}>‹ Anterior</button>
+      <button class="pg-btn" data-dir="1" ${paginaAtual >= totalPaginas ? "disabled" : ""}>Próxima ›</button>
+    `;
+    container.querySelectorAll(".pg-btn").forEach(b => {
+      b.addEventListener("click", () => onIrPara(paginaAtual + parseInt(b.dataset.dir)));
     });
   }
 
@@ -681,11 +720,12 @@
     ));
     histDadosDoDia = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     histGrupoAtivo = meuUsuario.grupos[0] || null;
+    histPagina = 1;
     renderHistGroupTabs();
     renderHistTable();
   });
 
-  document.getElementById("histBusca").addEventListener("input", renderHistTable);
+  document.getElementById("histBusca").addEventListener("input", () => { histPagina = 1; renderHistTable(); });
 
   // ---------- EXPORTAR EXCEL ----------
   async function inicializarExportar() {
@@ -838,6 +878,7 @@
     wrap.querySelectorAll(".gtab").forEach(el => {
       el.addEventListener("click", () => {
         histGrupoAtivo = el.dataset.grupo;
+        histPagina = 1;
         renderHistGroupTabs();
         renderHistTable();
       });
@@ -848,6 +889,7 @@
     const tbody = document.getElementById("histTableBody");
     if (histDadosDoDia.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr>`;
+      renderPaginacao("histPaginacao", 0, 1, () => {});
       return;
     }
     const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
@@ -857,8 +899,15 @@
 
     if (linhas.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Nenhum código encontrado.</td></tr>`;
+      renderPaginacao("histPaginacao", 0, 1, () => {});
       return;
     }
+
+    const totalFiltradoHist = linhas.length;
+    const totalPaginasHist = Math.max(1, Math.ceil(totalFiltradoHist / ITENS_POR_PAGINA));
+    if (histPagina > totalPaginasHist) histPagina = totalPaginasHist;
+    linhas = linhas.slice((histPagina - 1) * ITENS_POR_PAGINA, histPagina * ITENS_POR_PAGINA);
+
     tbody.innerHTML = linhas.map(d => `
       <tr>
         <td class="sku">${d.codigo}</td>
@@ -874,6 +923,8 @@
         <td class="col-num">${d.customedio != null ? formatBRL(d.customedio) : "—"}</td>
         <td class="col-num">${d.inventario != null ? formatBRL(d.inventario) : "—"}</td>
       </tr>`).join("");
+
+    renderPaginacao("histPaginacao", totalFiltradoHist, histPagina, (p) => { histPagina = p; renderHistTable(); });
   }
 
   // ---------- IMPORT CSV (múltiplos arquivos + arrastar e soltar) ----------
