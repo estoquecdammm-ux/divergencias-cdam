@@ -105,6 +105,13 @@
   .empty-row td{text-align:center;color:var(--muted);padding:22px;}
   .btn-del{background:none;border:1px solid var(--falta);color:#e08979;border-radius:5px;padding:4px 10px;font-size:11.5px;cursor:pointer;font-family:inherit;}
   .btn-del:hover{background:var(--falta-bg);}
+  .state-row{display:flex;gap:8px;margin-bottom:18px;}
+  .state-pill{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:20px;font-size:12.5px;font-weight:500;cursor:pointer;border:1px solid transparent;}
+  .state-pill.falta{background:var(--falta-bg);color:#e08979;}
+  .state-pill.sobra{background:var(--sobra-bg);color:#8ec1e6;}
+  .state-pill.ok{background:var(--ok-bg);color:#8fd6ab;}
+  .state-pill.all{background:var(--panel-2);color:var(--text);border-color:var(--border);}
+  .state-pill.selected{border-color:currentColor;}
   .danger-card{border-color:rgba(196,72,58,0.4);}
   .danger-card h2{color:#e08979;}
   .check-danger{display:flex;align-items:flex-start;gap:10px;font-size:12.5px;color:var(--text);cursor:pointer;line-height:1.4;}
@@ -242,6 +249,8 @@
       <div class="kpi falta"><div class="num" id="histKpiValorFalta">—</div><div class="lbl">Valor em falta</div></div>
       <div class="kpi sobra"><div class="num" id="histKpiValorSobra">—</div><div class="lbl">Valor em sobra</div></div>
     </div>
+
+    <div class="state-row" id="histStateRowAdmin"></div>
 
     <div class="card" style="overflow-x:auto;">
       <table style="width:max-content;min-width:100%;">
@@ -577,6 +586,7 @@
 
   const ITENS_POR_PAGINA = 50;
   let histPaginaAdmin = 1;
+  let histEstadoAtivoAdmin = "todos";
   const paginaCategoria = {}; // { tituloCategoria: numeroPagina }
 
   function renderPaginacao(containerId, totalItens, paginaAtual, onIrPara) {
@@ -937,11 +947,38 @@
     document.getElementById("histKpiValorSobra").textContent = formatBRL(totalVS);
   }
 
+  function renderHistStateRowAdmin() {
+    const wrap = document.getElementById("histStateRowAdmin");
+    if (!wrap) return;
+    if (histDadosDoDiaAdmin.length === 0) { wrap.innerHTML = ""; return; }
+    const nFalta = histDadosDoDiaAdmin.filter(d => (d.falta || 0) !== 0).length;
+    const nSobra = histDadosDoDiaAdmin.filter(d => (d.sobra || 0) !== 0).length;
+    const nSemDiv = histDadosDoDiaAdmin.filter(d => (d.falta || 0) === 0 && (d.sobra || 0) === 0).length;
+    wrap.innerHTML = `
+      <div class="state-pill all ${histEstadoAtivoAdmin==='todos'?'selected':''}" data-estado="todos">Todos · ${histDadosDoDiaAdmin.length}</div>
+      <div class="state-pill falta ${histEstadoAtivoAdmin==='falta'?'selected':''}" data-estado="falta">Falta · ${nFalta}</div>
+      <div class="state-pill sobra ${histEstadoAtivoAdmin==='sobra'?'selected':''}" data-estado="sobra">Sobra · ${nSobra}</div>
+      <div class="state-pill ok ${histEstadoAtivoAdmin==='semdiv'?'selected':''}" data-estado="semdiv">Sem divergência · ${nSemDiv}</div>
+    `;
+    wrap.querySelectorAll(".state-pill").forEach(el => {
+      el.addEventListener("click", () => {
+        histEstadoAtivoAdmin = el.dataset.estado;
+        histPaginaAdmin = 1;
+        renderHistStateRowAdmin();
+        renderHistTableAdmin();
+      });
+    });
+  }
+
   function renderHistTableAdmin() {
     renderHistKpisAdmin();
+    renderHistStateRowAdmin();
     const tbody = document.getElementById("histTableBody");
     const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
     let linhas = histDadosDoDiaAdmin;
+    if (histEstadoAtivoAdmin === "falta") linhas = linhas.filter(d => (d.falta || 0) !== 0);
+    if (histEstadoAtivoAdmin === "sobra") linhas = linhas.filter(d => (d.sobra || 0) !== 0);
+    if (histEstadoAtivoAdmin === "semdiv") linhas = linhas.filter(d => (d.falta || 0) === 0 && (d.sobra || 0) === 0);
     if (termo) linhas = linhas.filter(d => (d.codigo || "").toLowerCase().includes(termo));
     linhas = [...linhas].sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""));
 
@@ -976,8 +1013,8 @@
     renderPaginacao("histPaginacaoAdmin", totalFiltradoHistAdmin, histPaginaAdmin, (p) => { histPaginaAdmin = p; renderHistTableAdmin(); });
   }
 
-  document.getElementById("histSelectDia").addEventListener("change", () => { histPaginaAdmin = 1; carregarTabelaHistoricoAdmin(); });
-  document.getElementById("histSelectGrupo").addEventListener("change", () => { histPaginaAdmin = 1; carregarTabelaHistoricoAdmin(); });
+  document.getElementById("histSelectDia").addEventListener("change", () => { histPaginaAdmin = 1; histEstadoAtivoAdmin = "todos"; carregarTabelaHistoricoAdmin(); });
+  document.getElementById("histSelectGrupo").addEventListener("change", () => { histPaginaAdmin = 1; histEstadoAtivoAdmin = "todos"; carregarTabelaHistoricoAdmin(); });
   document.getElementById("histBusca").addEventListener("input", () => { histPaginaAdmin = 1; renderHistTableAdmin(); });
 
   // ---------- EXPORTAR EXCEL (admin: grupo específico ou todos juntos) ----------

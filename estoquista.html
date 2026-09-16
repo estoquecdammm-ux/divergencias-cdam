@@ -211,6 +211,8 @@
       <div class="kpi sobra"><div class="num" id="histKpiValorSobra">—</div><div class="lbl">Valor em sobra</div></div>
     </div>
 
+    <div class="state-row" id="histStateRow"></div>
+
     <div class="table-wrap">
       <table style="width:max-content;min-width:100%;">
         <thead>
@@ -700,6 +702,7 @@
 
   // ---------- HISTÓRICO ----------
   let histGrupoAtivo = null;
+  let histEstadoAtivo = "todos";
   let histDadosDoDia = [];
 
   async function carregarDiasHistorico() {
@@ -737,6 +740,7 @@
     histDadosDoDia = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     histGrupoAtivo = meuUsuario.grupos[0] || null;
     histPagina = 1;
+    histEstadoAtivo = "todos";
     renderHistGroupTabs();
     renderHistTable();
   });
@@ -895,6 +899,7 @@
       el.addEventListener("click", () => {
         histGrupoAtivo = el.dataset.grupo;
         histPagina = 1;
+        histEstadoAtivo = "todos";
         renderHistGroupTabs();
         renderHistTable();
       });
@@ -921,8 +926,33 @@
     document.getElementById("histKpiValorSobra").textContent = formatBRL(totalVS);
   }
 
+  function renderHistStateRow() {
+    const wrap = document.getElementById("histStateRow");
+    if (!wrap) return;
+    if (histDadosDoDia.length === 0 || !histGrupoAtivo) { wrap.innerHTML = ""; return; }
+    const doGrupo = histDadosDoDia.filter(d => d.grupo === histGrupoAtivo);
+    const nFalta = doGrupo.filter(d => (d.falta || 0) !== 0).length;
+    const nSobra = doGrupo.filter(d => (d.sobra || 0) !== 0).length;
+    const nSemDiv = doGrupo.filter(d => (d.falta || 0) === 0 && (d.sobra || 0) === 0).length;
+    wrap.innerHTML = `
+      <div class="state-pill all ${histEstadoAtivo==='todos'?'selected':''}" data-estado="todos">Todos · ${doGrupo.length}</div>
+      <div class="state-pill falta ${histEstadoAtivo==='falta'?'selected':''}" data-estado="falta">Falta · ${nFalta}</div>
+      <div class="state-pill sobra ${histEstadoAtivo==='sobra'?'selected':''}" data-estado="sobra">Sobra · ${nSobra}</div>
+      <div class="state-pill ok ${histEstadoAtivo==='semdiv'?'selected':''}" data-estado="semdiv">Sem divergência · ${nSemDiv}</div>
+    `;
+    wrap.querySelectorAll(".state-pill").forEach(el => {
+      el.addEventListener("click", () => {
+        histEstadoAtivo = el.dataset.estado;
+        histPagina = 1;
+        renderHistStateRow();
+        renderHistTable();
+      });
+    });
+  }
+
   function renderHistTable() {
     renderHistKpis();
+    renderHistStateRow();
     const tbody = document.getElementById("histTableBody");
     if (histDadosDoDia.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr>`;
@@ -931,6 +961,9 @@
     }
     const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
     let linhas = histDadosDoDia.filter(d => d.grupo === histGrupoAtivo);
+    if (histEstadoAtivo === "falta") linhas = linhas.filter(d => (d.falta || 0) !== 0);
+    if (histEstadoAtivo === "sobra") linhas = linhas.filter(d => (d.sobra || 0) !== 0);
+    if (histEstadoAtivo === "semdiv") linhas = linhas.filter(d => (d.falta || 0) === 0 && (d.sobra || 0) === 0);
     if (termo) linhas = linhas.filter(d => (d.codigo || "").toLowerCase().includes(termo));
     linhas.sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""));
 
