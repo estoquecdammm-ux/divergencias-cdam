@@ -203,6 +203,14 @@
 
     <div class="group-tabs" id="histGroupTabs"></div>
 
+    <div class="kpi-row" id="histKpiRow" style="display:none;grid-template-columns:repeat(5,1fr);">
+      <div class="kpi falta"><div class="num" id="histKpiFalta">—</div><div class="lbl">Em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="histKpiSobra">—</div><div class="lbl">Em sobra</div></div>
+      <div class="kpi"><div class="num" id="histKpiInventario">—</div><div class="lbl">Valor do inventário</div></div>
+      <div class="kpi falta"><div class="num" id="histKpiValorFalta">—</div><div class="lbl">Valor em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="histKpiValorSobra">—</div><div class="lbl">Valor em sobra</div></div>
+    </div>
+
     <div class="table-wrap">
       <table style="width:max-content;min-width:100%;">
         <thead>
@@ -893,7 +901,28 @@
     });
   }
 
+  function renderHistKpis() {
+    const kpiRow = document.getElementById("histKpiRow");
+    if (histDadosDoDia.length === 0 || !histGrupoAtivo) {
+      kpiRow.style.display = "none";
+      return;
+    }
+    kpiRow.style.display = "grid";
+    const doGrupo = histDadosDoDia.filter(d => d.grupo === histGrupoAtivo);
+    const nFalta = doGrupo.filter(d => (d.falta || 0) !== 0).length;
+    const nSobra = doGrupo.filter(d => (d.sobra || 0) !== 0).length;
+    const totalInv = doGrupo.reduce((s, d) => s + (d.inventario || 0), 0);
+    const totalVF = doGrupo.reduce((s, d) => s + (d.vlrfalta || 0), 0);
+    const totalVS = doGrupo.reduce((s, d) => s + (d.vlrsobra || 0), 0);
+    document.getElementById("histKpiFalta").textContent = nFalta;
+    document.getElementById("histKpiSobra").textContent = nSobra;
+    document.getElementById("histKpiInventario").textContent = formatBRL(totalInv);
+    document.getElementById("histKpiValorFalta").textContent = formatBRL(totalVF);
+    document.getElementById("histKpiValorSobra").textContent = formatBRL(totalVS);
+  }
+
   function renderHistTable() {
+    renderHistKpis();
     const tbody = document.getElementById("histTableBody");
     if (histDadosDoDia.length === 0) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="12">Escolhe um dia acima pra ver os dados.</td></tr>`;

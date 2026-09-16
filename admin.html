@@ -235,6 +235,14 @@
       </div>
     </div>
 
+    <div class="kpi-row" id="histKpiRow" style="display:none;grid-template-columns:repeat(5,1fr);">
+      <div class="kpi falta"><div class="num" id="histKpiFalta">—</div><div class="lbl">Em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="histKpiSobra">—</div><div class="lbl">Em sobra</div></div>
+      <div class="kpi"><div class="num" id="histKpiInventario">—</div><div class="lbl">Valor do inventário</div></div>
+      <div class="kpi falta"><div class="num" id="histKpiValorFalta">—</div><div class="lbl">Valor em falta</div></div>
+      <div class="kpi sobra"><div class="num" id="histKpiValorSobra">—</div><div class="lbl">Valor em sobra</div></div>
+    </div>
+
     <div class="card" style="overflow-x:auto;">
       <table style="width:max-content;min-width:100%;">
         <thead>
@@ -460,6 +468,7 @@
 
   // ---------- AUTH GUARD ----------
   let matriculaAtual = null; // matrícula/usuário logado agora, usado pra nunca se autoexcluir na zona de perigo
+  let congelamentoAtivo = true; // padrão seguro; controlado pelo interruptor "Modo de testes"
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       window.location.href = "index.html";
@@ -601,14 +610,17 @@
     }
     const grupoFiltro = filtroSel ? filtroSel.value : "";
 
-    // KPIs de quantidade — respeitam o mesmo filtro de grupo das caixas de valor
-    const divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    // KPIs de quantidade — respeitam o mesmo filtro de grupo das caixas de valor.
+    // Enquanto o "Modo de testes" (congelamento) estiver ATIVO, só conta código com importação de HOJE —
+    // dados de dias anteriores continuam salvos no banco, só ficam escondidos daqui até reimportar.
+    let divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    if (congelamentoAtivo) divsFiltradas = divsFiltradas.filter(d => d.data === hoje);
     const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
     const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
     const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
     const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = grupoFiltro ? 0 : divergenciasCache.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    const nSemGrupo = grupoFiltro ? 0 : divsFiltradas.filter(d => !gruposCadastrados.includes(d.grupo)).length;
     document.getElementById("kpiFalta").textContent = nFalta;
     document.getElementById("kpiSobra").textContent = nSobra;
     document.getElementById("kpiInversao").textContent = nInversao;
@@ -905,7 +917,28 @@
     renderHistTableAdmin();
   }
 
+  function renderHistKpisAdmin() {
+    const kpiRow = document.getElementById("histKpiRow");
+    if (histDadosDoDiaAdmin.length === 0) {
+      kpiRow.style.display = "none";
+      return;
+    }
+    kpiRow.style.display = "grid";
+    const dados = histDadosDoDiaAdmin;
+    const nFalta = dados.filter(d => (d.falta || 0) !== 0).length;
+    const nSobra = dados.filter(d => (d.sobra || 0) !== 0).length;
+    const totalInv = dados.reduce((s, d) => s + (d.inventario || 0), 0);
+    const totalVF = dados.reduce((s, d) => s + (d.vlrfalta || 0), 0);
+    const totalVS = dados.reduce((s, d) => s + (d.vlrsobra || 0), 0);
+    document.getElementById("histKpiFalta").textContent = nFalta;
+    document.getElementById("histKpiSobra").textContent = nSobra;
+    document.getElementById("histKpiInventario").textContent = formatBRL(totalInv);
+    document.getElementById("histKpiValorFalta").textContent = formatBRL(totalVF);
+    document.getElementById("histKpiValorSobra").textContent = formatBRL(totalVS);
+  }
+
   function renderHistTableAdmin() {
+    renderHistKpisAdmin();
     const tbody = document.getElementById("histTableBody");
     const termo = (document.getElementById("histBusca").value || "").trim().toLowerCase();
     let linhas = histDadosDoDiaAdmin;
@@ -1247,6 +1280,8 @@
   onSnapshot(doc(db, "div_config", "geral"), (snap) => {
     const ativo = snap.exists() ? (snap.data().congelamentoAtivo !== false) : true;
     document.getElementById("toggleCongelamento").checked = ativo;
+    congelamentoAtivo = ativo;
+    renderDashboard();
   });
   document.getElementById("toggleCongelamento").addEventListener("change", async (e) => {
     await setDoc(doc(db, "div_config", "geral"), { congelamentoAtivo: e.target.checked }, { merge: true });
