@@ -176,7 +176,7 @@
   </header>
 
   <section id="secao-visao-geral" class="secao">
-    <div class="kpi-row" id="kpiRowContagem" style="grid-template-columns:repeat(6,1fr);">
+    <div class="kpi-row" id="kpiRowContagem" style="grid-template-columns:repeat(7,1fr);">
       <div class="kpi"><div class="num" id="kpiTotal">—</div><div class="lbl">Total de SKUs</div></div>
       <div class="kpi falta" style="padding-bottom:4px;">
         <div style="position:relative;height:90px;">
@@ -189,6 +189,12 @@
           <canvas id="pizzaSobra"></canvas>
         </div>
         <div class="lbl">Em sobra</div>
+      </div>
+      <div class="kpi ok" style="padding-bottom:4px;">
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaCorretos"></canvas>
+        </div>
+        <div class="lbl">Corretos (saldo bate)</div>
       </div>
       <div class="kpi" style="padding-bottom:4px;">
         <div style="position:relative;height:90px;">
@@ -625,6 +631,14 @@
     renderDashboard();
   });
 
+  // ---------- HISTÓRICO DE HOJE: todo SKU lido no CSV de hoje (com ou sem divergência) ----------
+  // Usado pro card "Total de SKUs" e pra reconciliar Falta x Sobra x Corretos contra o relatório real
+  let historicoHojeCache = [];
+  onSnapshot(query(collection(db, "div_historico"), where("data", "==", hoje)), (snap) => {
+    historicoHojeCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+  });
+
   const CORES_SITUACAO = {
     "real": "#c4483a",
     "em-analise": "#c9a227",
@@ -686,19 +700,26 @@
     const gruposFiltro = usuarioSelecionado ? (usuarioSelecionado.grupos || []) : [];
     const temFiltro = gruposFiltro.length > 0;
 
-    // KPIs de quantidade — respeitam o mesmo filtro de usuário das caixas de valor.
-    // Enquanto o "Modo de testes" (congelamento) estiver ATIVO, só conta código com importação de HOJE —
-    // dados de dias anteriores continuam salvos no banco, só ficam escondidos daqui até reimportar.
+    // KPIs de quantidade — Total/Falta/Sobra/Corretos vêm do HISTÓRICO DE HOJE
+    // (todo SKU que apareceu no CSV importado hoje, com ou sem divergência),
+    // não da lista de divergências (que só tem quem ainda tem problema aberto).
+    // Isso reconcilia de verdade: Total = Falta + Sobra + Corretos, sempre.
+    const historicoFiltrado = temFiltro ? historicoHojeCache.filter(h => gruposFiltro.includes(h.grupo)) : historicoHojeCache;
+    const nTotal = historicoFiltrado.length;
+    const nFalta = historicoFiltrado.filter(h => (h.falta || 0) !== 0).length;
+    const nSobra = historicoFiltrado.filter(h => (h.falta || 0) === 0 && (h.sobra || 0) !== 0).length;
+    const nCorretos = historicoFiltrado.filter(h => (h.falta || 0) === 0 && (h.sobra || 0) === 0).length;
+
+    // Inversão e Com justificativa continuam vindo da lista de divergências AO
+    // VIVO — são status de trabalho (o que o estoquista já tratou), não fazem
+    // parte da reconciliação Falta x Sobra x Corretos do relatório do dia.
     let divsFiltradas = temFiltro ? divergenciasCache.filter(d => gruposFiltro.includes(d.grupo)) : divergenciasCache;
     if (congelamentoAtivo) divsFiltradas = divsFiltradas.filter(d => d.data === hoje);
-    const nTotal = divsFiltradas.length;
-    const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
-    const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
     const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
     const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
     const nSemGrupo = temFiltro ? 0 : divsFiltradas.filter(d => !gruposCadastrados.includes(d.grupo)).length;
-    renderPizzaContagem(nTotal, nFalta, nSobra, nInversao, nComJust, nSemGrupo);
+    renderPizzaContagem(nTotal, nFalta, nSobra, nCorretos, nInversao, nComJust, nSemGrupo);
 
     // KPIs de R$ — esses sim respeitam o filtro de usuário (que fica dentro da caixa de inventário)
     const resumosFiltrados = temFiltro ? resumoHojeCache.filter(r => gruposFiltro.includes(r.grupo)) : resumoHojeCache;
@@ -808,12 +829,13 @@
 
   let chartsMiniContagem = {};
 
-  function renderPizzaContagem(total, falta, sobra, inversao, comJust, semGrupo) {
+  function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust, semGrupo) {
     const totalEl = document.getElementById("kpiTotal");
     if (totalEl) totalEl.textContent = total;
     const specs = [
       { id: "pizzaFalta", valor: falta, cor: "#c4483a" },
       { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1" },
+      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a" },
       { id: "pizzaInversao", valor: inversao, cor: "#e8a33d" },
       { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" },
       { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6" }

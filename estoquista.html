@@ -141,6 +141,12 @@
         </div>
         <div class="lbl">Em sobra</div>
       </div>
+      <div class="kpi ok" style="padding-bottom:4px;">
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaCorretos"></canvas>
+        </div>
+        <div class="lbl">Corretos (saldo bate)</div>
+      </div>
       <div class="kpi" style="padding-bottom:4px;">
         <div style="position:relative;height:90px;">
           <canvas id="pizzaInversao"></canvas>
@@ -152,12 +158,6 @@
           <canvas id="pizzaComJustificativa"></canvas>
         </div>
         <div class="lbl">Com justificativa</div>
-      </div>
-      <div class="kpi" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaSemGrupo"></canvas>
-        </div>
-        <div class="lbl">Sem grupo atribuído</div>
       </div>
     </div>
 
@@ -358,6 +358,7 @@
   let divergenciasCache = [];
   let solucionadosCache = [];
   let resumoHojeCache = [];
+  let historicoHojeCache = []; // todo SKU lido no CSV de hoje (com ou sem divergência) — pro card Total de SKUs
   const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
 
   // Cores por situação — usadas no select da tabela e nos badges do admin
@@ -656,6 +657,7 @@
     const divPorChunk = chunks.map(() => []);
     const solPorChunk = chunks.map(() => []);
     const resumoPorChunk = chunks.map(() => []);
+    const historicoPorChunk = chunks.map(() => []);
 
     chunks.forEach((gruposChunk, idx) => {
       const q = query(collection(db, "div_divergencias"), where("grupo", "in", gruposChunk));
@@ -687,6 +689,14 @@
         resumoHojeCache = [].concat(...resumoPorChunk);
         renderValoresKpi();
       }, (err) => console.error("Erro carregando resumo diário:", err));
+
+      // Todo SKU lido no CSV de hoje (com ou sem divergência) — pro card Total de SKUs
+      const qHistorico = query(collection(db, "div_historico"), where("grupo", "in", gruposChunk), where("data", "==", HOJE_STR));
+      onSnapshot(qHistorico, (snap) => {
+        historicoPorChunk[idx] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        historicoHojeCache = [].concat(...historicoPorChunk);
+        renderValoresKpi();
+      }, (err) => console.error("Erro carregando histórico de hoje:", err));
     });
   }
 
@@ -749,31 +759,34 @@
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
     renderResumoCFR(gruposEscopo, totalInv, totalVF, totalVS, temResumo);
 
-    // Contagem de SKUs (mesma lógica do admin.html, escopada aos grupos do estoquista)
+    // Total/Falta/Sobra/Corretos vêm do HISTÓRICO DE HOJE (todo SKU lido no CSV,
+    // com ou sem divergência) — reconcilia de verdade: Total = Falta + Sobra + Corretos.
+    const historicoEscopo = historicoHojeCache.filter(h => gruposEscopo.includes(h.grupo));
+    const nTotal = historicoEscopo.length;
+    const nFalta = historicoEscopo.filter(h => (h.falta || 0) !== 0).length;
+    const nSobra = historicoEscopo.filter(h => (h.falta || 0) === 0 && (h.sobra || 0) !== 0).length;
+    const nCorretos = historicoEscopo.filter(h => (h.falta || 0) === 0 && (h.sobra || 0) === 0).length;
+
+    // Inversão e Com justificativa continuam vindo da lista de divergências ao
+    // vivo — são status de trabalho, não fazem parte da reconciliação do relatório.
     let divsContagem = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo));
     if (congelamentoAtivo) divsContagem = divsContagem.filter(d => d.data === HOJE_STR);
-    const nTotal = divsContagem.length;
-    const nFalta = divsContagem.filter(d => d.tipo === "falta").length;
-    const nSobra = divsContagem.filter(d => d.tipo === "sobra").length;
     const nInversao = divsContagem.filter(d => d.situacao === "inversao").length;
     const nComJust = divsContagem.filter(d => d.justificativa).length;
-    // "Sem grupo" não deveria acontecer aqui — tudo que o estoquista vê já veio
-    // filtrado pelos próprios grupos dele (sempre cadastrados). Fica sempre 0,
-    // mantido só por consistência visual com o painel do admin.
-    renderPizzaContagem(nTotal, nFalta, nSobra, nInversao, nComJust, 0);
+    renderPizzaContagem(nTotal, nFalta, nSobra, nCorretos, nInversao, nComJust);
   }
 
   let chartsMiniContagem = {};
 
-  function renderPizzaContagem(total, falta, sobra, inversao, comJust, semGrupo) {
+  function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust) {
     const totalEl = document.getElementById("kpiTotal");
     if (totalEl) totalEl.textContent = total;
     const specs = [
       { id: "pizzaFalta", valor: falta, cor: "#c4483a" },
       { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1" },
+      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a" },
       { id: "pizzaInversao", valor: inversao, cor: "#e8a33d" },
-      { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" },
-      { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6" }
+      { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" }
     ];
     specs.forEach(({ id, valor, cor }) => {
       const canvas = document.getElementById(id);
