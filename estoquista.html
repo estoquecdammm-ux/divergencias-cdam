@@ -129,35 +129,45 @@
   <section id="secao-minhas" class="secao">
     <div class="kpi-row" style="grid-template-columns:repeat(6,1fr);">
       <div class="kpi"><div class="num" id="kpiTotal">—</div><div class="lbl">Total de SKUs</div></div>
-      <div class="kpi falta" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaFalta"></canvas>
+      <div class="kpi falta" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaFalta"></canvas></div>
+        <div style="min-width:0;">
+          <div class="num" id="pizzaFaltaNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaFaltaSub">—</div>
+          <div class="lbl">Em falta</div>
         </div>
-        <div class="lbl">Em falta</div>
       </div>
-      <div class="kpi sobra" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaSobra"></canvas>
+      <div class="kpi sobra" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaSobra"></canvas></div>
+        <div style="min-width:0;">
+          <div class="num" id="pizzaSobraNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaSobraSub">—</div>
+          <div class="lbl">Em sobra</div>
         </div>
-        <div class="lbl">Em sobra</div>
       </div>
-      <div class="kpi ok" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaCorretos"></canvas>
+      <div class="kpi ok" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaCorretos"></canvas></div>
+        <div style="min-width:0;">
+          <div class="num" id="pizzaCorretosNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaCorretosSub">—</div>
+          <div class="lbl">Corretos (saldo bate)</div>
         </div>
-        <div class="lbl">Corretos (saldo bate)</div>
       </div>
-      <div class="kpi" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaInversao"></canvas>
+      <div class="kpi" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaInversao"></canvas></div>
+        <div style="min-width:0;">
+          <div class="num" id="pizzaInversaoNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaInversaoSub">—</div>
+          <div class="lbl">Em inversão</div>
         </div>
-        <div class="lbl">Em inversão</div>
       </div>
-      <div class="kpi ok" style="padding-bottom:4px;">
-        <div style="position:relative;height:90px;">
-          <canvas id="pizzaComJustificativa"></canvas>
+      <div class="kpi ok" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaComJustificativa"></canvas></div>
+        <div style="min-width:0;">
+          <div class="num" id="pizzaComJustificativaNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaComJustificativaSub">—</div>
+          <div class="lbl">Com justificativa</div>
         </div>
-        <div class="lbl">Com justificativa</div>
       </div>
     </div>
 
@@ -753,11 +763,14 @@
   // Resolvido = 0. Resolvido Parcial = usa a Qtd Ajustada (× custo médio) se preenchida, senão valor cheio.
   function valorRestante(d) {
     if (d.situacao === "resolvido") return 0;
+    const valorCheio = Math.abs(d.valor || 0);
     if (d.situacao === "resolvido-parcial" && d.quantidadeAjustada !== null && d.quantidadeAjustada !== undefined && d.quantidadeAjustada !== "") {
-      if (d.customedio) return Math.abs(d.quantidadeAjustada) * d.customedio;
-      if (d.quantidade) return Math.abs(d.valor || 0) * (Math.abs(d.quantidadeAjustada) / Math.abs(d.quantidade));
+      // Trava em valorCheio: uma Qtd Ajustada maior que a original (erro de
+      // digitação) nunca pode fazer o "restante" passar do valor total.
+      if (d.customedio) return Math.min(Math.abs(d.quantidadeAjustada) * d.customedio, valorCheio);
+      if (d.quantidade) return Math.min(valorCheio * (Math.abs(d.quantidadeAjustada) / Math.abs(d.quantidade)), valorCheio);
     }
-    return Math.abs(d.valor || 0);
+    return valorCheio;
   }
 
   function renderValoresKpi() {
@@ -821,6 +834,11 @@
     ];
     specs.forEach(({ id, valor, cor }) => {
       const canvas = document.getElementById(id);
+      const numEl = document.getElementById(`${id}Num`);
+      const subEl = document.getElementById(`${id}Sub`);
+      const pct = total ? ((valor / total) * 100).toFixed(1) : "0.0";
+      if (numEl) numEl.textContent = valor;
+      if (subEl) subEl.textContent = `de ${total} (${pct}%)`;
       if (!canvas) return;
       const resto = Math.max(total - valor, 0);
       const dados = { total, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
@@ -837,30 +855,11 @@
               legend: { display: false },
               tooltip: { callbacks: { label: (ctx) => {
                 const t = ctx.chart.data.total;
-                const pct = t ? ((ctx.raw / t) * 100).toFixed(1) : "0.0";
-                return ctx.dataIndex === 0 ? `Nesse status: ${ctx.raw} de ${t} (${pct}%)` : `Resto: ${ctx.raw} de ${t}`;
+                const p = t ? ((ctx.raw / t) * 100).toFixed(1) : "0.0";
+                return ctx.dataIndex === 0 ? `Nesse status: ${ctx.raw} de ${t} (${p}%)` : `Resto: ${ctx.raw} de ${t}`;
               } } }
             }
-          },
-          plugins: [{
-            id: `centerText-${id}`,
-            afterDraw(chart) {
-              const valorAtual = chart.data.datasets[0].data[0];
-              const totalAtual = chart.data.total;
-              const pct = totalAtual ? ((valorAtual / totalAtual) * 100).toFixed(1) : "0.0";
-              const { ctx, chartArea: { width, height, top, left } } = chart;
-              ctx.save();
-              ctx.textAlign = "center";
-              ctx.textBaseline = "middle";
-              ctx.font = "bold 15px sans-serif";
-              ctx.fillStyle = "#edeff2";
-              ctx.fillText(String(valorAtual), left + width / 2, top + height / 2 - 9);
-              ctx.font = "10px sans-serif";
-              ctx.fillStyle = "#8b97a6";
-              ctx.fillText(`de ${totalAtual} (${pct}%)`, left + width / 2, top + height / 2 + 9);
-              ctx.restore();
-            }
-          }]
+          }
         });
       }
     });
