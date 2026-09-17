@@ -51,7 +51,7 @@
   .paginacao .pg-btn:disabled{opacity:.4;cursor:default;}
 
   .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px;}
-  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;min-height:112px;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;}
   .kpi .num{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;}
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
   .kpi-com-filtro select{
@@ -240,28 +240,37 @@
           <div id="resumoCFRReducaoPerc" style="font-size:26px;font-weight:700;color:var(--ok);">—</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:14px;">
+      <div style="display:flex;flex-direction:column;gap:16px;margin-top:14px;">
         <div>
-          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Congelado (Falta x Sobra x Correto)</div>
-          <div style="position:relative;height:200px;">
-            <canvas id="pizzaCongelado"></canvas>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">Congelado</div>
+          <div style="display:flex;align-items:center;gap:20px;">
+            <div style="position:relative;height:160px;width:160px;flex-shrink:0;">
+              <canvas id="pizzaCongelado"></canvas>
+            </div>
+            <div id="legendaPizzaCongelado" style="flex:1;min-width:0;"></div>
           </div>
         </div>
         <div>
-          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Fechamento (ao vivo)</div>
-          <div style="position:relative;height:200px;">
-            <canvas id="pizzaFechamento"></canvas>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">Fechamento (ao vivo)</div>
+          <div style="display:flex;align-items:center;gap:20px;">
+            <div style="position:relative;height:160px;width:160px;flex-shrink:0;">
+              <canvas id="pizzaFechamento"></canvas>
+            </div>
+            <div id="legendaPizzaFechamento" style="flex:1;min-width:0;"></div>
           </div>
         </div>
         <div>
-          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Redução (Falta x Sobra já resolvidas)</div>
-          <div style="position:relative;height:200px;">
-            <canvas id="pizzaReducao"></canvas>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">Redução (o que já foi resolvido)</div>
+          <div style="display:flex;align-items:center;gap:20px;">
+            <div style="position:relative;height:160px;width:160px;flex-shrink:0;">
+              <canvas id="pizzaReducao"></canvas>
+            </div>
+            <div id="legendaPizzaReducao" style="flex:1;min-width:0;"></div>
           </div>
         </div>
       </div>
       <div style="margin-top:18px;display:flex;align-items:center;gap:10px;">
-        <label style="color:var(--muted);font-size:12px;">Ver detalhe de um grupo específico:</label>
+        <label style="color:var(--muted);font-size:12px;">Ver detalhe de um usuário específico:</label>
         <select id="filtroGrupoDetalhe" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;">
           <option value="">Nenhum (só o Geral)</option>
         </select>
@@ -926,7 +935,13 @@
     const congFalta = Math.abs(totalVF);
     const congSobra = totalVS;
 
-    const divsDoEscopo = divergenciasCache.filter(d => grupos.includes(d.grupo));
+    // IMPORTANTE: o Fechamento só pode considerar os grupos que TAMBÉM tiveram
+    // importação hoje (têm resumo) — senão compara maçã com laranja: um grupo
+    // sem CSV importado hoje não entra no Congelado, mas suas divergências
+    // antigas ainda apareceriam no Fechamento, inflando o valor artificialmente
+    // e distorcendo a Redução % (podendo até ficar negativa/absurda).
+    const gruposComResumoHoje = resumos.map(r => r.grupo);
+    const divsDoEscopo = divergenciasCache.filter(d => gruposComResumoHoje.includes(d.grupo));
     const fechFalta = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0) : 0;
     const fechSobra = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0) : 0;
 
@@ -943,7 +958,26 @@
   let chartsPizzaGrupos = {};
 
   // Pizza de 3 fatias: Falta, Sobra e Correto (= resto do inventário que não está em divergência)
-  function montarPizzaValor(mapa, id, falta, sobra, totalRef) {
+  // Desenha uma legenda em HTML normal ao lado da pizza — sempre legível,
+  // mesmo quando a fatia é minúscula (diferente da legenda embutida do
+  // Chart.js, que fica ilegível quando uma fatia é bem maior que as outras).
+  function montarLegendaPizza(legendaId, itens) {
+    const el = document.getElementById(legendaId);
+    if (!el) return;
+    const somaTotal = itens.reduce((s, i) => s + i.valor, 0);
+    el.innerHTML = itens.map(i => {
+      const pct = somaTotal ? ((i.valor / somaTotal) * 100).toFixed(2) : "0.00";
+      return `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="width:11px;height:11px;border-radius:3px;background:${i.cor};flex-shrink:0;"></span>
+          <span style="font-size:13px;color:var(--text);">
+            <strong>${esc(i.label)}:</strong> ${i.formatado} <span style="color:var(--muted);">(${pct}%)</span>
+          </span>
+        </div>`;
+    }).join("");
+  }
+
+  function montarPizzaValor(mapa, id, falta, sobra, totalRef, legendaId) {
     const canvas = document.getElementById(id);
     if (!canvas) return;
     const correto = Math.max(totalRef - falta - sobra, 0);
@@ -954,7 +988,7 @@
     const opcoes = {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#edeff2" } },
+        legend: { display: false },
         tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatBRL(ctx.raw)} de ${formatBRL(totalRef)}` } }
       }
     };
@@ -965,11 +999,18 @@
     } else {
       mapa[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoes });
     }
+    if (legendaId) {
+      montarLegendaPizza(legendaId, [
+        { label: "Falta", valor: falta, formatado: formatBRL(falta), cor: "#c4483a" },
+        { label: "Sobra", valor: sobra, formatado: formatBRL(sobra), cor: "#3e7cb1" },
+        { label: "Correto", valor: correto, formatado: formatBRL(correto), cor: "#4c9a6a" }
+      ]);
+    }
   }
 
   // Pizza de redução: 2 fatias (Falta reduzida x Sobra reduzida) — não compara com o inventário total,
   // é só a composição do que já foi resolvido.
-  function montarPizzaReducao(mapa, id, falta, sobra) {
+  function montarPizzaReducao(mapa, id, falta, sobra, legendaId) {
     const canvas = document.getElementById(id);
     if (!canvas) return;
     const dados = {
@@ -979,7 +1020,7 @@
     const opcoes = {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#edeff2" } },
+        legend: { display: false },
         tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatBRL(ctx.raw)}` } }
       }
     };
@@ -989,7 +1030,14 @@
     } else {
       mapa[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoes });
     }
+    if (legendaId) {
+      montarLegendaPizza(legendaId, [
+        { label: "Falta reduzida", valor: falta, formatado: formatBRL(falta), cor: "#c4483a" },
+        { label: "Sobra reduzida", valor: sobra, formatado: formatBRL(sobra), cor: "#3e7cb1" }
+      ]);
+    }
   }
+
 
   function renderResumoCFR(gruposEmEscopo) {
     const geral = calcularCFR(gruposEmEscopo);
@@ -1005,56 +1053,67 @@
     const redEl = document.getElementById("resumoCFRReducaoPerc");
     if (redEl) redEl.textContent = geral.reducaoPerc.toFixed(2) + "%";
 
-    montarPizzaValor(chartsPizzaCFR, "pizzaCongelado", geral.congFalta, geral.congSobra, geral.totalInv);
-    montarPizzaValor(chartsPizzaCFR, "pizzaFechamento", geral.fechFalta, geral.fechSobra, geral.totalInv);
-    montarPizzaReducao(chartsPizzaCFR, "pizzaReducao", geral.reducaoFalta, geral.reducaoSobra);
+    montarPizzaValor(chartsPizzaCFR, "pizzaCongelado", geral.congFalta, geral.congSobra, geral.totalInv, "legendaPizzaCongelado");
+    montarPizzaValor(chartsPizzaCFR, "pizzaFechamento", geral.fechFalta, geral.fechSobra, geral.totalInv, "legendaPizzaFechamento");
+    montarPizzaReducao(chartsPizzaCFR, "pizzaReducao", geral.reducaoFalta, geral.reducaoSobra, "legendaPizzaReducao");
 
-    // Detalhamento por grupo — só mostra quando um grupo específico é
-    // selecionado no filtro (evita poluir a tela com todo grupo do escopo de uma vez).
-    const filtroGrupoSel = document.getElementById("filtroGrupoDetalhe");
-    if (filtroGrupoSel) {
-      const chaveOpcoes = gruposEmEscopo.slice().sort().join("|");
-      if (filtroGrupoSel.dataset.opcoes !== chaveOpcoes) {
-        const valorAtual = filtroGrupoSel.value;
-        filtroGrupoSel.innerHTML = `<option value="">Nenhum (só o Geral)</option>` +
-          gruposEmEscopo.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
-        filtroGrupoSel.value = gruposEmEscopo.includes(valorAtual) ? valorAtual : "";
-        filtroGrupoSel.dataset.opcoes = chaveOpcoes;
-      }
+    // Detalhamento por USUÁRIO (não por grupo cru) — evita uma lista gigante
+    // quando o escopo é "Todos os usuários" (que vira todo grupo cadastrado).
+    // Só mostra quando alguém específico é selecionado no filtro.
+    const filtroUsuarioSel = document.getElementById("filtroGrupoDetalhe");
+    const estoquistasComGrupo = usuariosCache.filter(u => (u.grupos || []).length > 0);
+    if (filtroUsuarioSel && filtroUsuarioSel.dataset.opcoes !== String(estoquistasComGrupo.length)) {
+      const valorAtual = filtroUsuarioSel.value;
+      filtroUsuarioSel.innerHTML = `<option value="">Nenhum (só o Geral)</option>` +
+        estoquistasComGrupo.map(u => `<option value="${esc(u.matricula)}">${esc(u.nome) || esc(u.matricula)}</option>`).join("");
+      filtroUsuarioSel.value = estoquistasComGrupo.some(u => u.matricula === valorAtual) ? valorAtual : "";
+      filtroUsuarioSel.dataset.opcoes = String(estoquistasComGrupo.length);
     }
-    const grupoDetalheSelecionado = filtroGrupoSel ? filtroGrupoSel.value : "";
+    const matriculaDetalheSelecionada = filtroUsuarioSel ? filtroUsuarioSel.value : "";
 
     const wrap = document.getElementById("gruposDetalhePizzas");
     if (!wrap) return;
     Object.values(chartsPizzaGrupos).forEach(c => c.destroy());
     chartsPizzaGrupos = {};
-    if (!grupoDetalheSelecionado) {
+    if (!matriculaDetalheSelecionada) {
       wrap.innerHTML = "";
       return;
     }
-    const s = slugGrupo(grupoDetalheSelecionado);
+    const usuarioDetalhe = usuariosCache.find(u => u.matricula === matriculaDetalheSelecionada);
+    const gruposDoUsuarioDetalhe = usuarioDetalhe ? (usuarioDetalhe.grupos || []) : [];
+    const s = slugGrupo(matriculaDetalheSelecionada);
     wrap.innerHTML = `
       <div class="card" style="margin-top:16px;">
-        <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">${esc(grupoDetalheSelecionado)}</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
+        <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${esc(usuarioDetalhe?.nome) || esc(matriculaDetalheSelecionada)}</h3>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">${esc(gruposDoUsuarioDetalhe.join(", "))}</div>
+        <div style="display:flex;flex-direction:column;gap:16px;">
           <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Congelado</div>
-            <div style="position:relative;height:170px;"><canvas id="pizzaCongelado_${s}"></canvas></div>
+            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Congelado</div>
+            <div style="display:flex;align-items:center;gap:18px;">
+              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaCongelado_${s}"></canvas></div>
+              <div id="legendaCongelado_${s}" style="flex:1;min-width:0;"></div>
+            </div>
           </div>
           <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Fechamento</div>
-            <div style="position:relative;height:170px;"><canvas id="pizzaFechamento_${s}"></canvas></div>
+            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Fechamento</div>
+            <div style="display:flex;align-items:center;gap:18px;">
+              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaFechamento_${s}"></canvas></div>
+              <div id="legendaFechamento_${s}" style="flex:1;min-width:0;"></div>
+            </div>
           </div>
           <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Redução</div>
-            <div style="position:relative;height:170px;"><canvas id="pizzaReducao_${s}"></canvas></div>
+            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Redução</div>
+            <div style="display:flex;align-items:center;gap:18px;">
+              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaReducao_${s}"></canvas></div>
+              <div id="legendaReducao_${s}" style="flex:1;min-width:0;"></div>
+            </div>
           </div>
         </div>
       </div>`;
-    const dadosGrupo = calcularCFR([grupoDetalheSelecionado]);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosGrupo.congFalta, dadosGrupo.congSobra, dadosGrupo.totalInv);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosGrupo.fechFalta, dadosGrupo.fechSobra, dadosGrupo.totalInv);
-    montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosGrupo.reducaoFalta, dadosGrupo.reducaoSobra);
+    const dadosUsuario = calcularCFR(gruposDoUsuarioDetalhe);
+    montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosUsuario.congFalta, dadosUsuario.congSobra, dadosUsuario.totalInv, `legendaCongelado_${s}`);
+    montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosUsuario.fechFalta, dadosUsuario.fechSobra, dadosUsuario.totalInv, `legendaFechamento_${s}`);
+    montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosUsuario.reducaoFalta, dadosUsuario.reducaoSobra, `legendaReducao_${s}`);
   }
 
   const CATEGORIAS_GRUPO = [
