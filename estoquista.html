@@ -130,23 +130,33 @@
     <div class="kpi-row" style="grid-template-columns:repeat(6,1fr);">
       <div class="kpi"><div class="num" id="kpiTotal">—</div><div class="lbl">Total de SKUs</div></div>
       <div class="kpi falta" style="padding-bottom:4px;">
-        <canvas id="pizzaFalta" height="90"></canvas>
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaFalta"></canvas>
+        </div>
         <div class="lbl">Em falta</div>
       </div>
       <div class="kpi sobra" style="padding-bottom:4px;">
-        <canvas id="pizzaSobra" height="90"></canvas>
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaSobra"></canvas>
+        </div>
         <div class="lbl">Em sobra</div>
       </div>
       <div class="kpi" style="padding-bottom:4px;">
-        <canvas id="pizzaInversao" height="90"></canvas>
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaInversao"></canvas>
+        </div>
         <div class="lbl">Em inversão</div>
       </div>
       <div class="kpi ok" style="padding-bottom:4px;">
-        <canvas id="pizzaComJustificativa" height="90"></canvas>
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaComJustificativa"></canvas>
+        </div>
         <div class="lbl">Com justificativa</div>
       </div>
       <div class="kpi" style="padding-bottom:4px;">
-        <canvas id="pizzaSemGrupo" height="90"></canvas>
+        <div style="position:relative;height:90px;">
+          <canvas id="pizzaSemGrupo"></canvas>
+        </div>
         <div class="lbl">Sem grupo atribuído</div>
       </div>
     </div>
@@ -177,15 +187,21 @@
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:14px;">
         <div>
           <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Congelado (Falta x Sobra)</div>
-          <canvas id="pizzaCongelado" height="200"></canvas>
+          <div style="position:relative;height:200px;">
+            <canvas id="pizzaCongelado"></canvas>
+          </div>
         </div>
         <div>
           <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Fechamento (Falta x Sobra, ao vivo)</div>
-          <canvas id="pizzaFechamento" height="200"></canvas>
+          <div style="position:relative;height:200px;">
+            <canvas id="pizzaFechamento"></canvas>
+          </div>
         </div>
         <div>
           <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Redução (Falta x Sobra já resolvidas)</div>
-          <canvas id="pizzaReducao" height="200"></canvas>
+          <div style="position:relative;height:200px;">
+            <canvas id="pizzaReducao"></canvas>
+          </div>
         </div>
       </div>
     </div>
