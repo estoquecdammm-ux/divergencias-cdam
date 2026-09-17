@@ -313,6 +313,22 @@
 
   <section id="secao-historico" class="secao" style="display:none;">
     <div class="card">
+      <h2>Tendência (últimos 30 dias)</h2>
+      <div class="sub">Inventário, Falta e Sobra somados de todos os grupos, dia a dia — a partir do que cada estoquista importou. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra não ficarem achatadas no gráfico.</div>
+      <div style="position:relative;height:280px;margin-top:12px;">
+        <canvas id="chartTendenciaHistorico"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tendência de status (a partir de hoje)</h2>
+      <div class="sub">Quantidade de SKUs em Resolvido, Resolvido Parcial e Inversão, dia a dia. Esse retrato começou a ser salvo agora — antes disso o sistema só sabia o status "ao vivo" de hoje, sem histórico do passado.</div>
+      <div style="position:relative;height:280px;margin-top:12px;">
+        <canvas id="chartTendenciaSituacoes"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Histórico</h2>
       <div class="sub">Todos os códigos de um dia (com ou sem divergência), de todos os grupos ou só de um específico.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
@@ -552,7 +568,7 @@
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
     }
 
-    if (alvo === "historico") carregarDiasHistoricoAdmin();
+    if (alvo === "historico") { carregarDiasHistoricoAdmin(); carregarTendenciaHistoricoAdmin(); carregarTendenciaSituacoesAdmin(); }
     if (alvo === "excel") inicializarExportarAdmin();
   });
 
@@ -1211,6 +1227,104 @@
 
   // ---------- HISTÓRICO (admin vê todos os grupos) ----------
   let histDadosDoDiaAdmin = [];
+
+  // Tendência de 30 dias (Inventário, Falta, Sobra) — todos os grupos, admin vê tudo
+  async function carregarTendenciaHistoricoAdmin() {
+    const canvas = document.getElementById("chartTendenciaHistorico");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const snap = await getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr)));
+    const porDia = {};
+    snap.docs.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0 };
+      porDia[h.data].inventario += (h.inventario || 0);
+      porDia[h.data].falta += (h.vlrfalta || 0);
+      porDia[h.data].sobra += (h.vlrsobra || 0);
+    });
+    const dias = Object.keys(porDia).sort();
+    if (dias.length === 0) {
+      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há histórico suficiente pra mostrar tendência.</div>`;
+      return;
+    }
+    const dados = {
+      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+      datasets: [
+        { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
+        { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
+      ]
+    };
+    new Chart(canvas, {
+      type: "line",
+      data: dados,
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#edeff2" } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBRL(ctx.raw)}` } }
+        },
+        scales: {
+          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+          y: { type: "linear", position: "left", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Inventário", color: "#8b97a6" } },
+          y1: { type: "linear", position: "right", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { drawOnChartArea: false }, title: { display: true, text: "Falta / Sobra", color: "#8b97a6" } }
+        }
+      }
+    });
+  }
+
+  // Tendência de contagem de status (Resolvido / Resolvido Parcial / Inversão) —
+  // só existe a partir do dia em que passamos a salvar esse retrato diário
+  async function carregarTendenciaSituacoesAdmin() {
+    const canvas = document.getElementById("chartTendenciaSituacoes");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const snap = await getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)));
+    const porDia = {};
+    snap.docs.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { resolvido: 0, resolvidoParcial: 0, inversao: 0 };
+      porDia[h.data].resolvido += (h.contagens?.resolvido || 0);
+      porDia[h.data].resolvidoParcial += (h.contagens?.resolvidoParcial || 0);
+      porDia[h.data].inversao += (h.contagens?.inversao || 0);
+    });
+    const dias = Object.keys(porDia).sort();
+    if (dias.length === 0) {
+      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há retrato de status suficiente — esse histórico começou a ser salvo a partir de hoje, então vai crescendo dia a dia.</div>`;
+      return;
+    }
+    const dados = {
+      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+      datasets: [
+        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2 },
+        { label: "Resolvido Parcial", data: dias.map(d => porDia[d].resolvidoParcial), borderColor: "#c9a227", backgroundColor: "transparent", tension: 0.2 },
+        { label: "Inversão", data: dias.map(d => porDia[d].inversao), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2 }
+      ]
+    };
+    new Chart(canvas, {
+      type: "line",
+      data: dados,
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#edeff2" } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} SKU(s)` } }
+        },
+        scales: {
+          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+          y: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Qtd de SKUs", color: "#8b97a6" }, beginAtZero: true }
+        }
+      }
+    });
+  }
 
   async function carregarDiasHistoricoAdmin() {
     const selectDia = document.getElementById("histSelectDia");

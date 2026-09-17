@@ -25,6 +25,7 @@
   .brand .name{font-weight:700;font-size:15px;}
   .brand .sub{font-size:11px;color:var(--muted);}
   .nav-item{display:flex;align-items:center;gap:14px;padding:11px 15px;white-space:nowrap;color:var(--muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left;cursor:pointer;font-family:inherit;}
+  .nav-section{padding:14px 20px 4px 20px;font-size:10.5px;color:#5c6b7d;white-space:nowrap;letter-spacing:.3px;}
   .nav-item .ic{width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;}
   .nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(232,163,61,0.06);}
   .nav-item:hover{color:var(--text);}
@@ -112,6 +113,8 @@
     </div>
   </div>
   <a class="nav-item active" href="#" data-secao="minhas"><span class="ic">▤</span><span>Minhas divergências</span></a>
+  <div class="nav-section">MEUS GRUPOS</div>
+  <div id="navGruposEstoquista"></div>
   <a class="nav-item" href="#" data-secao="historico"><span class="ic">🕘</span><span>Histórico</span></a>
   <a class="nav-item" href="#" data-secao="excel"><span class="ic">📤</span><span>Exportar Excel</span></a>
   <button class="nav-item" id="btnLogout" style="margin-top:auto;"><span class="ic">⏻</span><span>Sair</span></button>
@@ -241,9 +244,9 @@
       <div class="import-status err" id="avisoGrupoErrado" style="display:none;font-weight:600;"></div>
       <button class="btn-del" id="btnDesfazerImport" style="display:none;margin-top:10px;">Desfazer essa importação</button>
     </div>
+  </section>
 
-    <div class="group-tabs" id="groupTabs"></div>
-
+  <section id="secao-grupo-detalhe" class="secao" style="display:none;">
     <div class="state-row" id="stateRow"></div>
 
     <div class="table-wrap">
@@ -273,7 +276,24 @@
     <div class="paginacao" id="tablePaginacao"></div>
   </section>
 
+
   <section id="secao-historico" class="secao" style="display:none;">
+    <div class="card">
+      <h2>Tendência (últimos 30 dias)</h2>
+      <div class="sub">Inventário, Falta e Sobra somados dos seus grupos, dia a dia. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra não ficarem achatadas no gráfico.</div>
+      <div style="position:relative;height:280px;margin-top:12px;">
+        <canvas id="chartTendenciaHistorico"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tendência de status (a partir de hoje)</h2>
+      <div class="sub">Quantidade de SKUs em Resolvido, Resolvido Parcial e Inversão, dia a dia. Esse retrato começou a ser salvo agora — antes disso o sistema só sabia o status "ao vivo" de hoje, sem histórico do passado.</div>
+      <div style="position:relative;height:280px;margin-top:12px;">
+        <canvas id="chartTendenciaSituacoes"></canvas>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Histórico</h2>
       <div class="sub">Todos os códigos de um dia (com ou sem divergência), do jeito que estavam naquele dia.</div>
@@ -359,20 +379,30 @@
   setPersistence(auth, browserSessionPersistence); // login por aba, não compartilhado entre abas
   const db = getFirestore(app);
 
-  // ---------- NAVEGAÇÃO ENTRE SEÇÕES ----------
+  // ---------- NAVEGAÇÃO ENTRE SEÇÕES (delegado, funciona com itens de grupo criados depois) ----------
   const titulos = { "minhas": "Minhas divergências", "historico": "Histórico", "excel": "Exportar Excel" };
-  document.querySelectorAll(".nav-item[data-secao]").forEach(item => {
-    item.addEventListener("click", (e) => {
-      e.preventDefault();
-      const alvo = item.dataset.secao;
-      document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
-      document.getElementById(`secao-${alvo}`).style.display = "";
-      document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
-      item.classList.add("active");
+  document.querySelector("nav.side").addEventListener("click", (e) => {
+    const item = e.target.closest(".nav-item[data-secao]");
+    if (!item) return;
+    e.preventDefault();
+    const alvo = item.dataset.secao;
+    document.querySelectorAll(".secao").forEach(s => s.style.display = "none");
+    document.getElementById(`secao-${alvo}`).style.display = "";
+    document.querySelectorAll(".nav-item[data-secao]").forEach(n => n.classList.remove("active"));
+    item.classList.add("active");
+
+    if (alvo === "grupo-detalhe") {
+      grupoAtivo = item.dataset.grupo;
+      paginaTabela = 1;
+      document.getElementById("tituloSecao").textContent = grupoAtivo;
+      renderStateRow();
+      renderTable();
+    } else {
       document.getElementById("tituloSecao").textContent = titulos[alvo] || "";
-      if (alvo === "historico") carregarDiasHistorico();
-      if (alvo === "excel") inicializarExportar();
-    });
+    }
+
+    if (alvo === "historico") { carregarDiasHistorico(); carregarTendenciaHistorico(); carregarTendenciaSituacoes(); }
+    if (alvo === "excel") inicializarExportar();
   });
 
   let meuUsuario = null; // { matricula, nome, grupos }
@@ -424,7 +454,7 @@
       new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
     grupoAtivo = meuUsuario.grupos[0] || null;
-    renderGroupTabs();
+    renderNavGruposEstoquista();
     watchDivergencias();
 
     // popula o filtro de grupo das caixinhas de valor ("Todos os grupos" + individuais)
@@ -447,27 +477,21 @@
     window.location.href = "index.html";
   });
 
-  // ---------- ABAS DE GRUPO ----------
-  function renderGroupTabs() {
-    const wrap = document.getElementById("groupTabs");
+  // ---------- GRUPOS NA BARRA LATERAL ----------
+  function renderNavGruposEstoquista() {
+    const wrap = document.getElementById("navGruposEstoquista");
+    if (!wrap) return;
     if (!meuUsuario.grupos.length) {
-      wrap.innerHTML = `<div style="color:var(--muted);font-size:13px;">Você ainda não tem grupo atribuído — fale com o admin.</div>`;
+      wrap.innerHTML = `<div style="padding:8px 15px;color:var(--muted);font-size:12px;">Nenhum grupo atribuído — fale com o admin.</div>`;
       return;
     }
     wrap.innerHTML = meuUsuario.grupos.map(g => {
       const count = divergenciasCache.filter(d => d.grupo === g).length;
-      return `<div class="gtab ${g === grupoAtivo ? 'active' : ''}" data-grupo="${esc(g)}">${esc(g)}<span class="count">${count}</span></div>`;
+      return `<a class="nav-item ${g === grupoAtivo && document.getElementById("secao-grupo-detalhe")?.style.display !== "none" ? 'active' : ''}" href="#" data-secao="grupo-detalhe" data-grupo="${esc(g)}">
+        <span class="ic">▫</span><span>${esc(g)}</span>
+        <span style="margin-left:auto;color:var(--muted);font-size:12px;">${count}</span>
+      </a>`;
     }).join("");
-    wrap.querySelectorAll(".gtab").forEach(el => {
-      el.addEventListener("click", () => {
-        grupoAtivo = el.dataset.grupo;
-        paginaTabela = 1;
-        renderGroupTabs();
-        renderStateRow();
-        renderTable();
-        renderValoresKpi();
-      });
-    });
   }
 
   // ---------- FILTRO DE ESTADO ----------
@@ -629,6 +653,7 @@
           ultimaEdicaoPor: meuUsuario.matricula,
           ultimaEdicaoEm: serverTimestamp()
         }, { merge: true });
+        atualizarSnapshotSituacoesHoje(grupoAtivo);
       });
     });
 
@@ -698,7 +723,7 @@
       onSnapshot(q, (snap) => {
         divPorChunk[idx] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         divergenciasCache = [].concat(...divPorChunk);
-        renderGroupTabs();
+        renderNavGruposEstoquista();
         renderStateRow();
         renderTable();
         renderValoresKpi();
@@ -750,6 +775,34 @@
       getDocs(query(collection(db, nomeColecao), where("grupo", "in", chunk), ...outrasCondicoes))
     ));
     return resultados.flatMap(snap => snap.docs);
+  }
+
+  // Retrato diário de Falta/Sobra/Em análise/Resolvido Parcial/Inversão/Resolvido
+  // de um grupo, salvo em div_historico_situacoes — chamado sempre que alguém
+  // muda uma situação ou importa CSV, pra ir acumulando histórico dia a dia
+  // (antes disso, só existia o estado "ao vivo" de hoje, sem retrato do passado).
+  async function atualizarSnapshotSituacoesHoje(grupo) {
+    if (!grupo) return;
+    // Busca o estado atual direto do banco (não confia no cache local, que pode
+    // ainda não ter recebido a atualização do onSnapshot no exato momento da chamada)
+    const snap = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "==", grupo)));
+    const divsDoGrupo = snap.docs.map(d => d.data());
+    const contagens = {
+      falta: divsDoGrupo.filter(d => d.tipo === "falta").length,
+      sobra: divsDoGrupo.filter(d => d.tipo === "sobra").length,
+      emAnalise: divsDoGrupo.filter(d => d.situacao === "em-analise").length,
+      resolvidoParcial: divsDoGrupo.filter(d => d.situacao === "resolvido-parcial").length,
+      inversao: divsDoGrupo.filter(d => d.situacao === "inversao").length,
+      resolvido: divsDoGrupo.filter(d => d.situacao === "resolvido").length
+    };
+    const docId = `${HOJE_STR}_${sanitizarId(grupo)}`;
+    try {
+      await setDoc(doc(db, "div_historico_situacoes", docId), {
+        data: HOJE_STR, grupo, contagens, atualizadoEm: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      console.error("Erro ao salvar retrato diário de situações:", err);
+    }
   }
 
   function esc(v) {
@@ -1051,6 +1104,104 @@
   let histGrupoAtivo = null;
   let histEstadoAtivo = "todos";
   let histDadosDoDia = [];
+
+  // Tendência de 30 dias (Inventário, Falta, Sobra) — só dos grupos do estoquista
+  async function carregarTendenciaHistorico() {
+    const canvas = document.getElementById("chartTendenciaHistorico");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const docs = await getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", ">=", cutoffStr));
+    const porDia = {};
+    docs.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0 };
+      porDia[h.data].inventario += (h.inventario || 0);
+      porDia[h.data].falta += (h.vlrfalta || 0);
+      porDia[h.data].sobra += (h.vlrsobra || 0);
+    });
+    const dias = Object.keys(porDia).sort();
+    if (dias.length === 0) {
+      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há histórico suficiente pra mostrar tendência.</div>`;
+      return;
+    }
+    const dados = {
+      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+      datasets: [
+        { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
+        { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
+      ]
+    };
+    new Chart(canvas, {
+      type: "line",
+      data: dados,
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#edeff2" } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBRL(ctx.raw)}` } }
+        },
+        scales: {
+          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+          y: { type: "linear", position: "left", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Inventário", color: "#8b97a6" } },
+          y1: { type: "linear", position: "right", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { drawOnChartArea: false }, title: { display: true, text: "Falta / Sobra", color: "#8b97a6" } }
+        }
+      }
+    });
+  }
+
+  // Tendência de contagem de status (Resolvido / Resolvido Parcial / Inversão) —
+  // só existe a partir do dia em que passamos a salvar esse retrato diário
+  async function carregarTendenciaSituacoes() {
+    const canvas = document.getElementById("chartTendenciaSituacoes");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const docs = await getDocsPorGrupos("div_historico_situacoes", meuUsuario.grupos, where("data", ">=", cutoffStr));
+    const porDia = {};
+    docs.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { resolvido: 0, resolvidoParcial: 0, inversao: 0 };
+      porDia[h.data].resolvido += (h.contagens?.resolvido || 0);
+      porDia[h.data].resolvidoParcial += (h.contagens?.resolvidoParcial || 0);
+      porDia[h.data].inversao += (h.contagens?.inversao || 0);
+    });
+    const dias = Object.keys(porDia).sort();
+    if (dias.length === 0) {
+      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há retrato de status suficiente — esse histórico começou a ser salvo a partir de hoje, então vai crescendo dia a dia.</div>`;
+      return;
+    }
+    const dados = {
+      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+      datasets: [
+        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2 },
+        { label: "Resolvido Parcial", data: dias.map(d => porDia[d].resolvidoParcial), borderColor: "#c9a227", backgroundColor: "transparent", tension: 0.2 },
+        { label: "Inversão", data: dias.map(d => porDia[d].inversao), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2 }
+      ]
+    };
+    new Chart(canvas, {
+      type: "line",
+      data: dados,
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#edeff2" } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} SKU(s)` } }
+        },
+        scales: {
+          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+          y: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Qtd de SKUs", color: "#8b97a6" }, beginAtZero: true }
+        }
+      }
+    });
+  }
 
   async function carregarDiasHistorico() {
     const select = document.getElementById("histSelectDia");
@@ -1680,6 +1831,13 @@
       const totalHistorico = Object.values(totaisPorGrupo).reduce((s, t) => s + t.totalCodigos, 0);
       const totalLinhasComGrupo = linhas.length - 1; // total de linhas de dados no CSV
       const totalIgnoradas = ignoradosGrupo + dptoNaoCadastrado;
+
+      // Salva o retrato de hoje das situações (Falta/Sobra/Em análise/Resolvido
+      // Parcial/Inversão/Resolvido) pra cada grupo que essa importação tocou —
+      // é assim que o histórico de status começa a se acumular a partir de hoje.
+      for (const nomeGrupo of Object.keys(totaisPorGrupo)) {
+        atualizarSnapshotSituacoesHoje(nomeGrupo);
+      }
 
       // Aviso bem visível: se NADA do CSV bateu com os grupos do usuário, provavelmente é o arquivo errado
       if (totalHistorico === 0 && totalIgnoradas > 0) {
