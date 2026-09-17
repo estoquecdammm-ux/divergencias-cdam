@@ -1101,39 +1101,54 @@
     }
     const usuarioDetalhe = usuariosCache.find(u => u.matricula === matriculaDetalheSelecionada);
     const gruposDoUsuarioDetalhe = usuarioDetalhe ? (usuarioDetalhe.grupos || []) : [];
-    const s = slugGrupo(matriculaDetalheSelecionada);
-    wrap.innerHTML = `
-      <div class="card" style="margin-top:16px;">
+
+    const cabecalho = `
+      <div style="margin-top:16px;">
         <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${esc(usuarioDetalhe?.nome) || esc(matriculaDetalheSelecionada)}</h3>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">${esc(gruposDoUsuarioDetalhe.join(", "))}</div>
-        <div style="display:flex;flex-direction:column;gap:16px;">
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Congelado</div>
-            <div style="display:flex;align-items:center;gap:18px;">
-              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaCongelado_${s}"></canvas></div>
-              <div id="legendaCongelado_${s}" style="flex:1;min-width:0;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Fechamento</div>
-            <div style="display:flex;align-items:center;gap:18px;">
-              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaFechamento_${s}"></canvas></div>
-              <div id="legendaFechamento_${s}" style="flex:1;min-width:0;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Redução</div>
-            <div style="display:flex;align-items:center;gap:18px;">
-              <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaReducao_${s}"></canvas></div>
-              <div id="legendaReducao_${s}" style="flex:1;min-width:0;"></div>
-            </div>
-          </div>
-        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${esc(gruposDoUsuarioDetalhe.join(", "))}</div>
       </div>`;
-    const dadosUsuario = calcularCFR(gruposDoUsuarioDetalhe);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosUsuario.congFalta, dadosUsuario.congSobra, dadosUsuario.totalInv, `legendaCongelado_${s}`);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosUsuario.fechFalta, dadosUsuario.fechSobra, dadosUsuario.totalInv, `legendaFechamento_${s}`);
-    montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosUsuario.reducaoFalta, dadosUsuario.reducaoSobra, `legendaReducao_${s}`);
+
+    // Um card POR GRUPO (não combinado) — pra conferência individual, grupo a grupo
+    const blocosPorGrupo = gruposDoUsuarioDetalhe.map(g => {
+      const s = slugGrupo(matriculaDetalheSelecionada + "_" + g);
+      return `
+        <div class="card" style="margin-top:12px;">
+          <h4 style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px;">${esc(g)}</h4>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Congelado</div>
+              <div style="display:flex;align-items:center;gap:18px;">
+                <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaCongelado_${s}"></canvas></div>
+                <div id="legendaCongelado_${s}" style="flex:1;min-width:0;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Fechamento</div>
+              <div style="display:flex;align-items:center;gap:18px;">
+                <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaFechamento_${s}"></canvas></div>
+                <div id="legendaFechamento_${s}" style="flex:1;min-width:0;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Redução</div>
+              <div style="display:flex;align-items:center;gap:18px;">
+                <div style="position:relative;height:140px;width:140px;flex-shrink:0;"><canvas id="pizzaReducao_${s}"></canvas></div>
+                <div id="legendaReducao_${s}" style="flex:1;min-width:0;"></div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+
+    wrap.innerHTML = cabecalho + blocosPorGrupo;
+
+    gruposDoUsuarioDetalhe.forEach(g => {
+      const s = slugGrupo(matriculaDetalheSelecionada + "_" + g);
+      const dadosGrupo = calcularCFR([g]);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosGrupo.congFalta, dadosGrupo.congSobra, dadosGrupo.totalInv, `legendaCongelado_${s}`);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosGrupo.fechFalta, dadosGrupo.fechSobra, dadosGrupo.totalInv, `legendaFechamento_${s}`);
+      montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosGrupo.reducaoFalta, dadosGrupo.reducaoSobra, `legendaReducao_${s}`);
+    });
   }
 
   const CATEGORIAS_GRUPO = [
