@@ -143,6 +143,7 @@
   .modal-error.show{display:block;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -175,18 +176,34 @@
   </header>
 
   <section id="secao-visao-geral" class="secao">
-    <div class="kpi-row" id="kpiRowContagem" style="grid-template-columns:repeat(5,1fr);">
-      <div class="kpi falta"><div class="num" id="kpiFalta">—</div><div class="lbl">Em falta</div></div>
-      <div class="kpi sobra"><div class="num" id="kpiSobra">—</div><div class="lbl">Em sobra</div></div>
-      <div class="kpi" style="color:var(--accent);"><div class="num" id="kpiInversao">—</div><div class="lbl">Em inversão</div></div>
-      <div class="kpi ok"><div class="num" id="kpiComJustificativa">—</div><div class="lbl">Com justificativa</div></div>
-      <div class="kpi"><div class="num" id="kpiSemGrupo">—</div><div class="lbl">Sem grupo atribuído</div></div>
+    <div class="kpi-row" id="kpiRowContagem" style="grid-template-columns:repeat(6,1fr);">
+      <div class="kpi"><div class="num" id="kpiTotal">—</div><div class="lbl">Total de SKUs</div></div>
+      <div class="kpi falta" style="padding-bottom:4px;">
+        <canvas id="pizzaFalta" height="90"></canvas>
+        <div class="lbl">Em falta</div>
+      </div>
+      <div class="kpi sobra" style="padding-bottom:4px;">
+        <canvas id="pizzaSobra" height="90"></canvas>
+        <div class="lbl">Em sobra</div>
+      </div>
+      <div class="kpi" style="padding-bottom:4px;">
+        <canvas id="pizzaInversao" height="90"></canvas>
+        <div class="lbl">Em inversão</div>
+      </div>
+      <div class="kpi ok" style="padding-bottom:4px;">
+        <canvas id="pizzaComJustificativa" height="90"></canvas>
+        <div class="lbl">Com justificativa</div>
+      </div>
+      <div class="kpi" style="padding-bottom:4px;">
+        <canvas id="pizzaSemGrupo" height="90"></canvas>
+        <div class="lbl">Sem grupo atribuído</div>
+      </div>
     </div>
 
     <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-top:14px;">
       <div class="kpi kpi-com-filtro">
         <select id="filtroGrupoVisaoGeral">
-          <option value="">Todos os grupos</option>
+          <option value="">Todos os usuários</option>
         </select>
         <div class="num" id="kpiValorInventario">—</div>
         <div class="lbl">Valor total do inventário (hoje)</div>
@@ -195,15 +212,32 @@
       <div class="kpi sobra"><div class="num" id="kpiValorSobra">—</div><div class="lbl">Valor em sobra (hoje)</div></div>
       <div class="kpi ok"><div class="num" id="kpiValorResolvido">—</div><div class="lbl">Valor total resolvido</div></div>
     </div>
-    <div class="soon-note">O filtro de grupo (dentro da caixa de inventário) afeta todas as caixas da página — tanto as contagens quanto os valores. Selecionando "Todos os grupos", volta a somar tudo.</div>
+    <div class="soon-note">O filtro de usuário (dentro da caixa de inventário) afeta todas as caixas da página — tanto as contagens quanto os valores, considerando TODOS os grupos atribuídos a essa pessoa. Selecionando "Todos os usuários", volta a somar tudo.</div>
 
     <div class="card" style="margin-top:22px;">
       <h2>Resumo — Congelado x Fechamento x Redução</h2>
       <div class="sub" id="resumoCFRsub">Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido.</div>
-      <table>
-        <thead><tr><th></th><th>Congelado</th><th>Fechamento</th><th>Redução</th></tr></thead>
-        <tbody id="resumoCFRBody"></tbody>
-      </table>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;margin:12px 0 4px;">
+        <div style="color:var(--muted);font-size:13px;">Inventário (não muda entre Congelado/Fechamento): <strong id="resumoCFRInventario" style="color:var(--text);">—</strong></div>
+        <div style="text-align:right;">
+          <div style="color:var(--muted);font-size:12px;">Redução % (geral, do que foi resolvido hoje)</div>
+          <div id="resumoCFRReducaoPerc" style="font-size:26px;font-weight:700;color:var(--ok);">—</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:14px;">
+        <div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Congelado (Falta x Sobra)</div>
+          <canvas id="pizzaCongelado" height="200"></canvas>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Fechamento (Falta x Sobra, ao vivo)</div>
+          <canvas id="pizzaFechamento" height="200"></canvas>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Redução (Falta x Sobra já resolvidas)</div>
+          <canvas id="pizzaReducao" height="200"></canvas>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -618,41 +652,45 @@
   }
 
   function renderDashboard() {
-    // popula o filtro de grupo (só se ainda não tiver as opções certas)
+    // popula o filtro de USUÁRIO (antes era de grupo) — só lista quem tem
+    // pelo menos 1 grupo atribuído, já que quem não tem grupo não filtra nada
     const filtroSel = document.getElementById("filtroGrupoVisaoGeral");
-    if (filtroSel && filtroSel.dataset.populado !== String(gruposCache.length)) {
+    const estoquistasComGrupo = usuariosCache.filter(u => (u.grupos || []).length > 0);
+    if (filtroSel && filtroSel.dataset.populado !== String(estoquistasComGrupo.length)) {
       const valorAtual = filtroSel.value;
-      filtroSel.innerHTML = `<option value="">Todos os grupos</option>` +
-        gruposCache.map(g => `<option value="${esc(g.nome)}">${esc(g.nome)}</option>`).join("");
+      filtroSel.innerHTML = `<option value="">Todos os usuários</option>` +
+        estoquistasComGrupo.map(u => `<option value="${esc(u.matricula)}">${esc(u.nome) || esc(u.matricula)}</option>`).join("");
       filtroSel.value = valorAtual;
-      filtroSel.dataset.populado = String(gruposCache.length);
+      filtroSel.dataset.populado = String(estoquistasComGrupo.length);
     }
-    const grupoFiltro = filtroSel ? filtroSel.value : "";
+    const matriculaFiltro = filtroSel ? filtroSel.value : "";
+    // grupos atribuídos ao usuário selecionado — o filtro passa a valer para
+    // TODOS os grupos dessa pessoa, não só um. Sem seleção, filtra nada (mostra tudo).
+    const usuarioSelecionado = matriculaFiltro ? usuariosCache.find(u => u.matricula === matriculaFiltro) : null;
+    const gruposFiltro = usuarioSelecionado ? (usuarioSelecionado.grupos || []) : [];
+    const temFiltro = gruposFiltro.length > 0;
 
-    // KPIs de quantidade — respeitam o mesmo filtro de grupo das caixas de valor.
+    // KPIs de quantidade — respeitam o mesmo filtro de usuário das caixas de valor.
     // Enquanto o "Modo de testes" (congelamento) estiver ATIVO, só conta código com importação de HOJE —
     // dados de dias anteriores continuam salvos no banco, só ficam escondidos daqui até reimportar.
-    let divsFiltradas = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    let divsFiltradas = temFiltro ? divergenciasCache.filter(d => gruposFiltro.includes(d.grupo)) : divergenciasCache;
     if (congelamentoAtivo) divsFiltradas = divsFiltradas.filter(d => d.data === hoje);
+    const nTotal = divsFiltradas.length;
     const nFalta = divsFiltradas.filter(d => d.tipo === "falta").length;
     const nSobra = divsFiltradas.filter(d => d.tipo === "sobra").length;
     const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
     const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = grupoFiltro ? 0 : divsFiltradas.filter(d => !gruposCadastrados.includes(d.grupo)).length;
-    document.getElementById("kpiFalta").textContent = nFalta;
-    document.getElementById("kpiSobra").textContent = nSobra;
-    document.getElementById("kpiInversao").textContent = nInversao;
-    document.getElementById("kpiComJustificativa").textContent = nComJust;
-    document.getElementById("kpiSemGrupo").textContent = nSemGrupo;
+    const nSemGrupo = temFiltro ? 0 : divsFiltradas.filter(d => !gruposCadastrados.includes(d.grupo)).length;
+    renderPizzaContagem(nTotal, nFalta, nSobra, nInversao, nComJust, nSemGrupo);
 
-    // KPIs de R$ — esses sim respeitam o filtro de grupo (que fica dentro da caixa de inventário)
-    const resumosFiltrados = grupoFiltro ? resumoHojeCache.filter(r => r.grupo === grupoFiltro) : resumoHojeCache;
+    // KPIs de R$ — esses sim respeitam o filtro de usuário (que fica dentro da caixa de inventário)
+    const resumosFiltrados = temFiltro ? resumoHojeCache.filter(r => gruposFiltro.includes(r.grupo)) : resumoHojeCache;
     const totalInv = resumosFiltrados.reduce((s, r) => s + (r.totalInventario || 0), 0);
     const totalVF = resumosFiltrados.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
     const totalVS = resumosFiltrados.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
-    const solucionadosFiltrados = grupoFiltro ? solucionadosCache.filter(d => d.grupo === grupoFiltro) : solucionadosCache;
-    const divergenciasResolvidasManual = (grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache)
+    const solucionadosFiltrados = temFiltro ? solucionadosCache.filter(d => gruposFiltro.includes(d.grupo)) : solucionadosCache;
+    const divergenciasResolvidasManual = (temFiltro ? divergenciasCache.filter(d => gruposFiltro.includes(d.grupo)) : divergenciasCache)
       .filter(d => d.situacao === "resolvido" || d.situacao === "resolvido-parcial");
     const totalResolvido =
       solucionadosFiltrados.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
@@ -662,7 +700,7 @@
     document.getElementById("kpiValorSobra").textContent = formatBRL(totalVS);
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
 
-    renderResumoCFR(grupoFiltro, totalInv, totalVF, totalVS, resumosFiltrados);
+    renderResumoCFR(gruposFiltro, totalInv, totalVF, totalVS, resumosFiltrados);
     renderNavGrupos();
     if (grupoDetalheAtivo) renderGrupoDetalhe(grupoDetalheAtivo);
 
@@ -752,16 +790,66 @@
     return Math.abs(d.valor || 0);
   }
 
-  function renderResumoCFR(grupoFiltro, totalInvCong, totalVFCong, totalVSCong, resumosFiltrados) {
-    const tbody = document.getElementById("resumoCFRBody");
-    if (!tbody) return;
+  let chartsMiniContagem = {};
 
+  function renderPizzaContagem(total, falta, sobra, inversao, comJust, semGrupo) {
+    const totalEl = document.getElementById("kpiTotal");
+    if (totalEl) totalEl.textContent = total;
+    const specs = [
+      { id: "pizzaFalta", valor: falta, cor: "#c4483a" },
+      { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1" },
+      { id: "pizzaInversao", valor: inversao, cor: "#e8a33d" },
+      { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" },
+      { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6" }
+    ];
+    specs.forEach(({ id, valor, cor }) => {
+      const canvas = document.getElementById(id);
+      if (!canvas) return;
+      const resto = Math.max(total - valor, 0);
+      const dados = { datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
+      if (chartsMiniContagem[id]) {
+        chartsMiniContagem[id].data = dados;
+        chartsMiniContagem[id].update();
+      } else {
+        chartsMiniContagem[id] = new Chart(canvas, {
+          type: "doughnut",
+          data: dados,
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: "68%",
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (ctx) => ctx.dataIndex === 0 ? `Nesse status: ${ctx.raw}` : `Resto do total: ${ctx.raw}` } }
+            }
+          },
+          plugins: [{
+            id: `centerText-${id}`,
+            afterDraw(chart) {
+              const valorAtual = chart.data.datasets[0].data[0];
+              const { ctx, chartArea: { width, height, top, left } } = chart;
+              ctx.save();
+              ctx.font = "bold 15px sans-serif";
+              ctx.fillStyle = "#edeff2";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(String(valorAtual), left + width / 2, top + height / 2);
+              ctx.restore();
+            }
+          }]
+        });
+      }
+    });
+  }
+
+  let chartsPizzaCFR = {};
+
+  function renderResumoCFR(gruposFiltro, totalInvCong, totalVFCong, totalVSCong, resumosFiltrados) {
     // Se ninguém importou o CSV de hoje pro escopo selecionado, não tem "Congelado" de hoje —
     // então o Fechamento também fica zerado/travado, em vez de comparar com dado vivo desatualizado.
     const temImportacaoHoje = resumosFiltrados && resumosFiltrados.length > 0;
+    const temFiltro = gruposFiltro && gruposFiltro.length > 0;
 
     // Fechamento = valores AO VIVO agora, usando o valor restante real de cada item
-    const divsBase = grupoFiltro ? divergenciasCache.filter(d => d.grupo === grupoFiltro) : divergenciasCache;
+    const divsBase = temFiltro ? divergenciasCache.filter(d => gruposFiltro.includes(d.grupo)) : divergenciasCache;
     const fechFalta = temImportacaoHoje ? divsBase.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0) : 0;
     const fechSobra = temImportacaoHoje ? divsBase.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0) : 0;
 
@@ -769,12 +857,11 @@
     const congSobra = totalVSCong;
     const congDiv = congFalta + congSobra;
     const fechDiv = fechFalta + fechSobra;
-    const reducaoFalta = congFalta - fechFalta;
-    const reducaoSobra = congSobra - fechSobra;
+    const reducaoFalta = Math.max(congFalta - fechFalta, 0);
+    const reducaoSobra = Math.max(congSobra - fechSobra, 0);
     const reducaoDiv = congDiv - fechDiv;
 
     const divPercCong = totalInvCong ? (congDiv / totalInvCong) * 100 : 0;
-    const divPercFech = totalInvCong ? (fechDiv / totalInvCong) * 100 : 0;
     const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
 
     const subEl = document.getElementById("resumoCFRsub");
@@ -784,22 +871,41 @@
         : "Ninguém importou o CSV de hoje ainda pra esse escopo — os valores ficam travados em R$ 0,00 até a próxima importação.";
     }
 
-    const linha = (label, cong, fech, red, isPerc) => `
-      <tr>
-        <td style="color:var(--muted);font-weight:600;">${label}</td>
-        <td>${isPerc ? cong.toFixed(2) + "%" : formatBRL(cong)}</td>
-        <td>${isPerc ? fech.toFixed(2) + "%" : formatBRL(fech)}</td>
-        <td style="color:${red > 0 ? 'var(--ok)' : 'var(--muted)'};">${isPerc ? red.toFixed(2) + "%" : formatBRL(red)}</td>
-      </tr>`;
+    const invEl = document.getElementById("resumoCFRInventario");
+    if (invEl) invEl.textContent = formatBRL(totalInvCong);
+    const redEl = document.getElementById("resumoCFRReducaoPerc");
+    if (redEl) redEl.textContent = reducaoPerc.toFixed(2) + "%";
 
-    tbody.innerHTML =
-      linha("Inventário", totalInvCong, totalInvCong, 0, false) +
-      linha("Falta", congFalta, fechFalta, reducaoFalta, false) +
-      linha("Sobra", congSobra, fechSobra, reducaoSobra, false) +
-      linha("Divergência", congDiv, fechDiv, reducaoDiv, false) +
-      linha("Div %", divPercCong, divPercFech, divPercCong - divPercFech, true) +
-      linha("Acurácia", 100 - divPercCong, 100 - divPercFech, divPercFech <= divPercCong ? (divPercCong - divPercFech) : -(divPercFech - divPercCong), true) +
-      `<tr><td style="color:var(--muted);font-weight:600;">Redução %</td><td colspan="2" style="color:var(--muted);">—</td><td style="color:var(--ok);font-weight:600;">${reducaoPerc.toFixed(2)}%</td></tr>`;
+    const corFalta = "#c4483a";
+    const corSobra = "#3e7cb1";
+
+    const opcoesPizza = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#edeff2" } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatBRL(ctx.raw)}` } }
+      }
+    };
+
+    const montarPizza = (id, valorFalta, valorSobra) => {
+      const canvas = document.getElementById(id);
+      if (!canvas) return;
+      const dados = {
+        labels: ["Falta", "Sobra"],
+        datasets: [{ data: [valorFalta, valorSobra], backgroundColor: [corFalta, corSobra], borderWidth: 0 }]
+      };
+      if (chartsPizzaCFR[id]) {
+        chartsPizzaCFR[id].data = dados;
+        chartsPizzaCFR[id].update();
+      } else {
+        chartsPizzaCFR[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoesPizza });
+      }
+    };
+
+    montarPizza("pizzaCongelado", congFalta, congSobra);
+    montarPizza("pizzaFechamento", fechFalta, fechSobra);
+    montarPizza("pizzaReducao", reducaoFalta, reducaoSobra);
   }
 
   const CATEGORIAS_GRUPO = [
