@@ -186,13 +186,13 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:14px;">
         <div>
-          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Congelado (Falta x Sobra)</div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Congelado (Falta x Sobra x Correto)</div>
           <div style="position:relative;height:200px;">
             <canvas id="pizzaCongelado"></canvas>
           </div>
         </div>
         <div>
-          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Fechamento (Falta x Sobra, ao vivo)</div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:6px;text-align:center;">Fechamento (ao vivo)</div>
           <div style="position:relative;height:200px;">
             <canvas id="pizzaFechamento"></canvas>
           </div>
@@ -204,6 +204,7 @@
           </div>
         </div>
       </div>
+      <div id="gruposDetalhePizzas"></div>
     </div>
 
     <div class="card">
@@ -747,8 +748,11 @@
     const totalVS = resumosEscopo.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
     const temResumo = resumosEscopo.length > 0;
 
-    const solDoEscopo = solucionadosCache.filter(d => gruposEscopo.includes(d.grupo));
-    const divergenciasResolvidasManual = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo) && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial"));
+    // "Valor total resolvido" mostra só o que foi resolvido HOJE — o histórico
+    // completo continua salvo no banco, só não entra mais nessa soma acumulada.
+    const solDoEscopo = solucionadosCache.filter(d => gruposEscopo.includes(d.grupo) && d.data === HOJE_STR);
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && d.ultimaEdicaoEm.toDate().toISOString().slice(0, 10) === HOJE_STR;
+    const divergenciasResolvidasManual = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo) && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d));
     const totalResolvido =
       solDoEscopo.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
       divergenciasResolvidasManual.reduce((s, d) => s + (Math.abs(d.valor || 0) - valorRestante(d)), 0);
@@ -757,7 +761,7 @@
     document.getElementById("kpiValorFalta").textContent = temResumo ? formatBRL(totalVF) : "—";
     document.getElementById("kpiValorSobra").textContent = temResumo ? formatBRL(totalVS) : "—";
     document.getElementById("kpiValorResolvido").textContent = formatBRL(totalResolvido);
-    renderResumoCFR(gruposEscopo, totalInv, totalVF, totalVS, temResumo);
+    renderResumoCFR(gruposEscopo);
 
     // Total/Falta/Sobra/Corretos vêm do HISTÓRICO DE HOJE (todo SKU lido no CSV,
     // com ou sem divergência) — reconcilia de verdade: Total = Falta + Sobra + Corretos.
@@ -792,7 +796,7 @@
       const canvas = document.getElementById(id);
       if (!canvas) return;
       const resto = Math.max(total - valor, 0);
-      const dados = { datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
+      const dados = { total, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
       if (chartsMiniContagem[id]) {
         chartsMiniContagem[id].data = dados;
         chartsMiniContagem[id].update();
@@ -801,23 +805,27 @@
           type: "doughnut",
           data: dados,
           options: {
-            responsive: true, maintainAspectRatio: false, cutout: "68%",
+            responsive: true, maintainAspectRatio: false, cutout: "62%",
             plugins: {
               legend: { display: false },
-              tooltip: { callbacks: { label: (ctx) => ctx.dataIndex === 0 ? `Nesse status: ${ctx.raw}` : `Resto do total: ${ctx.raw}` } }
+              tooltip: { callbacks: { label: (ctx) => ctx.dataIndex === 0 ? `Nesse status: ${ctx.raw} de ${ctx.chart.data.total}` : `Resto: ${ctx.raw} de ${ctx.chart.data.total}` } }
             }
           },
           plugins: [{
             id: `centerText-${id}`,
             afterDraw(chart) {
               const valorAtual = chart.data.datasets[0].data[0];
+              const totalAtual = chart.data.total;
               const { ctx, chartArea: { width, height, top, left } } = chart;
               ctx.save();
-              ctx.font = "bold 15px sans-serif";
-              ctx.fillStyle = "#edeff2";
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
-              ctx.fillText(String(valorAtual), left + width / 2, top + height / 2);
+              ctx.font = "bold 15px sans-serif";
+              ctx.fillStyle = "#edeff2";
+              ctx.fillText(String(valorAtual), left + width / 2, top + height / 2 - 8);
+              ctx.font = "11px sans-serif";
+              ctx.fillStyle = "#8b97a6";
+              ctx.fillText(`de ${totalAtual}`, left + width / 2, top + height / 2 + 10);
               ctx.restore();
             }
           }]
@@ -827,13 +835,25 @@
   }
 
   let chartsPizzaCFR = {};
+  let chartsPizzaGrupos = {};
 
-  function renderResumoCFR(gruposEscopo, totalInvCong, totalVFCong, totalVSCong, temImportacaoHoje) {
-    const congFalta = Math.abs(totalVFCong || 0);
-    const congSobra = totalVSCong || 0;
+  function slugGrupo(nome) {
+    return String(nome).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "_");
+  }
 
-    // Se ninguém importou o CSV de hoje, o Fechamento também fica zerado (não compara com dado vivo desatualizado)
-    const divsDoEscopo = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo));
+  // Calcula Congelado/Fechamento/Redução pra uma lista específica de grupos —
+  // reaproveitado tanto pro "Geral" quanto pra cada grupo individual.
+  function calcularCFR(grupos) {
+    const resumos = resumoHojeCache.filter(r => grupos.includes(r.grupo));
+    const totalInv = resumos.reduce((s, r) => s + (r.totalInventario || 0), 0);
+    const totalVF = resumos.reduce((s, r) => s + (r.totalValorFalta || 0), 0);
+    const totalVS = resumos.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    const temImportacaoHoje = resumos.length > 0;
+
+    const congFalta = Math.abs(totalVF);
+    const congSobra = totalVS;
+
+    const divsDoEscopo = divergenciasCache.filter(d => grupos.includes(d.grupo));
     const fechFalta = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "falta").reduce((s, d) => s + valorRestante(d), 0) : 0;
     const fechSobra = temImportacaoHoje ? divsDoEscopo.filter(d => d.tipo === "sobra").reduce((s, d) => s + valorRestante(d), 0) : 0;
 
@@ -844,47 +864,116 @@
     const reducaoDiv = congDiv - fechDiv;
     const reducaoPerc = congDiv ? (reducaoDiv / congDiv) * 100 : 0;
 
-    const subEl = document.getElementById("resumoCFRsub");
-    if (subEl) {
-      subEl.textContent = temImportacaoHoje
-        ? "Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido."
-        : "Ninguém importou o CSV de hoje ainda pra esse escopo — os valores ficam travados em R$ 0,00 até a próxima importação.";
+    return { totalInv, congFalta, congSobra, fechFalta, fechSobra, reducaoFalta, reducaoSobra, reducaoPerc, temImportacaoHoje };
+  }
+
+  // Pizza de 3 fatias: Falta, Sobra e Correto (= resto do inventário que não está em divergência)
+  function montarPizzaValor(mapa, id, falta, sobra, totalRef) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const correto = Math.max(totalRef - falta - sobra, 0);
+    const dados = {
+      labels: ["Falta", "Sobra", "Correto"],
+      datasets: [{ data: [falta, sobra, correto], backgroundColor: ["#c4483a", "#3e7cb1", "#4c9a6a"], borderWidth: 0 }]
+    };
+    const opcoes = {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#edeff2" } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatBRL(ctx.raw)} de ${formatBRL(totalRef)}` } }
+      }
+    };
+    if (mapa[id]) {
+      mapa[id].data = dados;
+      mapa[id].options = opcoes;
+      mapa[id].update();
+    } else {
+      mapa[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoes });
     }
+  }
 
-    const invEl = document.getElementById("resumoCFRInventario");
-    if (invEl) invEl.textContent = formatBRL(totalInvCong);
-    const redEl = document.getElementById("resumoCFRReducaoPerc");
-    if (redEl) redEl.textContent = reducaoPerc.toFixed(2) + "%";
-
-    const corFalta = "#c4483a";
-    const corSobra = "#3e7cb1";
-    const opcoesPizza = {
-      responsive: true,
-      maintainAspectRatio: false,
+  // Pizza de redução: 2 fatias (Falta reduzida x Sobra reduzida) — não compara com o inventário total,
+  // é só a composição do que já foi resolvido.
+  function montarPizzaReducao(mapa, id, falta, sobra) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const dados = {
+      labels: ["Falta", "Sobra"],
+      datasets: [{ data: [falta, sobra], backgroundColor: ["#c4483a", "#3e7cb1"], borderWidth: 0 }]
+    };
+    const opcoes = {
+      responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { labels: { color: "#edeff2" } },
         tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatBRL(ctx.raw)}` } }
       }
     };
+    if (mapa[id]) {
+      mapa[id].data = dados;
+      mapa[id].update();
+    } else {
+      mapa[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoes });
+    }
+  }
 
-    const montarPizza = (id, valorFalta, valorSobra) => {
-      const canvas = document.getElementById(id);
-      if (!canvas) return;
-      const dados = {
-        labels: ["Falta", "Sobra"],
-        datasets: [{ data: [valorFalta, valorSobra], backgroundColor: [corFalta, corSobra], borderWidth: 0 }]
-      };
-      if (chartsPizzaCFR[id]) {
-        chartsPizzaCFR[id].data = dados;
-        chartsPizzaCFR[id].update();
-      } else {
-        chartsPizzaCFR[id] = new Chart(canvas, { type: "pie", data: dados, options: opcoesPizza });
-      }
-    };
+  function renderResumoCFR(gruposEscopo) {
+    const geral = calcularCFR(gruposEscopo);
 
-    montarPizza("pizzaCongelado", congFalta, congSobra);
-    montarPizza("pizzaFechamento", fechFalta, fechSobra);
-    montarPizza("pizzaReducao", reducaoFalta, reducaoSobra);
+    const subEl = document.getElementById("resumoCFRsub");
+    if (subEl) {
+      subEl.textContent = geral.temImportacaoHoje
+        ? "Congelado: valores de quando importou o CSV. Fechamento: valores agora, descontando o que já foi resolvido. Redução: quanto já foi resolvido."
+        : "Ninguém importou o CSV de hoje ainda pra esse escopo — os valores ficam travados em R$ 0,00 até a próxima importação.";
+    }
+    const invEl = document.getElementById("resumoCFRInventario");
+    if (invEl) invEl.textContent = formatBRL(geral.totalInv);
+    const redEl = document.getElementById("resumoCFRReducaoPerc");
+    if (redEl) redEl.textContent = geral.reducaoPerc.toFixed(2) + "%";
+
+    montarPizzaValor(chartsPizzaCFR, "pizzaCongelado", geral.congFalta, geral.congSobra, geral.totalInv);
+    montarPizzaValor(chartsPizzaCFR, "pizzaFechamento", geral.fechFalta, geral.fechSobra, geral.totalInv);
+    montarPizzaReducao(chartsPizzaCFR, "pizzaReducao", geral.reducaoFalta, geral.reducaoSobra);
+
+    // Detalhamento por grupo — como o estoquista pode ter vários grupos, mostra
+    // o "Geral" (acima) e, abaixo, um conjunto de pizzas pra CADA grupo do escopo.
+    const wrap = document.getElementById("gruposDetalhePizzas");
+    if (!wrap) return;
+    if (gruposEscopo.length <= 1) {
+      Object.values(chartsPizzaGrupos).forEach(c => c.destroy());
+      chartsPizzaGrupos = {};
+      wrap.innerHTML = "";
+      return;
+    }
+    Object.values(chartsPizzaGrupos).forEach(c => c.destroy());
+    chartsPizzaGrupos = {};
+    wrap.innerHTML = gruposEscopo.map(g => {
+      const s = slugGrupo(g);
+      return `
+        <div class="card" style="margin-top:16px;">
+          <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">${esc(g)}</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Congelado</div>
+              <div style="position:relative;height:170px;"><canvas id="pizzaCongelado_${s}"></canvas></div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Fechamento</div>
+              <div style="position:relative;height:170px;"><canvas id="pizzaFechamento_${s}"></canvas></div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:6px;text-align:center;">Redução</div>
+              <div style="position:relative;height:170px;"><canvas id="pizzaReducao_${s}"></canvas></div>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+    gruposEscopo.forEach(g => {
+      const s = slugGrupo(g);
+      const dadosGrupo = calcularCFR([g]);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosGrupo.congFalta, dadosGrupo.congSobra, dadosGrupo.totalInv);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosGrupo.fechFalta, dadosGrupo.fechSobra, dadosGrupo.totalInv);
+      montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosGrupo.reducaoFalta, dadosGrupo.reducaoSobra);
+    });
   }
 
   // ---------- HISTÓRICO ----------
