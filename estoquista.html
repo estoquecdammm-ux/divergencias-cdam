@@ -192,7 +192,7 @@
         <div style="min-width:0;">
           <div class="num" id="pizzaComJustificativaNum" style="font-size:20px;">—</div>
           <div style="font-size:11px;color:var(--muted);" id="pizzaComJustificativaSub">—</div>
-          <div class="lbl">Com justificativa</div>
+          <div class="lbl">Com justificativa (das divergências)</div>
         </div>
       </div>
     </div>
@@ -248,12 +248,6 @@
             <div id="legendaPizzaReducao" style="flex:1;min-width:0;"></div>
           </div>
         </div>
-      </div>
-      <div style="margin-top:18px;display:flex;align-items:center;gap:10px;">
-        <label style="color:var(--muted);font-size:12px;">Ver detalhe de um grupo específico:</label>
-        <select id="filtroGrupoDetalhe" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;">
-          <option value="">Nenhum (só o Geral)</option>
-        </select>
       </div>
       <div id="gruposDetalhePizzas"></div>
     </div>
@@ -497,14 +491,6 @@
     filtroSel.innerHTML = `<option value="__todos__">Todos os grupos</option>` +
       meuUsuario.grupos.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
     filtroSel.addEventListener("change", renderValoresKpi);
-
-    // filtro do detalhamento por grupo dentro do Resumo CFR
-    const filtroGrupoDetalheSel = document.getElementById("filtroGrupoDetalhe");
-    if (filtroGrupoDetalheSel) {
-      filtroGrupoDetalheSel.innerHTML = `<option value="">Nenhum (só o Geral)</option>` +
-        meuUsuario.grupos.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
-      filtroGrupoDetalheSel.addEventListener("change", renderValoresKpi);
-    }
   });
 
   document.getElementById("btnLogout").addEventListener("click", async () => {
@@ -967,23 +953,24 @@
   function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust) {
     const totalEl = document.getElementById("kpiTotal");
     if (totalEl) totalEl.textContent = total;
+    const totalDivergente = falta + sobra;
     const specs = [
-      { id: "pizzaFalta", valor: falta, cor: "#c4483a" },
-      { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1" },
-      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a" },
-      { id: "pizzaInversao", valor: inversao, cor: "#e8a33d" },
-      { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" }
+      { id: "pizzaFalta", valor: falta, cor: "#c4483a", totalRef: total },
+      { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1", totalRef: total },
+      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a", totalRef: total },
+      { id: "pizzaInversao", valor: inversao, cor: "#e8a33d", totalRef: total },
+      { id: "pizzaComJustificativa", valor: comJust, cor: "#c9a227", totalRef: totalDivergente }
     ];
-    specs.forEach(({ id, valor, cor }) => {
+    specs.forEach(({ id, valor, cor, totalRef }) => {
       const canvas = document.getElementById(id);
       const numEl = document.getElementById(`${id}Num`);
       const subEl = document.getElementById(`${id}Sub`);
-      const pct = total ? ((valor / total) * 100).toFixed(1) : "0.0";
+      const pct = totalRef ? ((valor / totalRef) * 100).toFixed(1) : "0.0";
       if (numEl) numEl.textContent = valor;
-      if (subEl) subEl.textContent = `de ${total} (${pct}%)`;
+      if (subEl) subEl.textContent = `de ${totalRef} (${pct}%)`;
       if (!canvas) return;
-      const resto = Math.max(total - valor, 0);
-      const dados = { total, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
+      const resto = Math.max(totalRef - valor, 0);
+      const dados = { total: totalRef, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
       if (chartsMiniContagem[id]) {
         chartsMiniContagem[id].data = dados;
         chartsMiniContagem[id].update();
@@ -1142,51 +1129,54 @@
     montarPizzaValor(chartsPizzaCFR, "pizzaFechamento", geral.fechFalta, geral.fechSobra, geral.totalInv, "legendaPizzaFechamento");
     montarPizzaReducao(chartsPizzaCFR, "pizzaReducao", geral.reducaoFalta, geral.reducaoSobra, "legendaPizzaReducao");
 
-    // Detalhamento por grupo — só mostra quando um grupo específico é
-    // selecionado no filtro (evita poluir a tela com todo grupo do escopo de uma vez).
-    const filtroGrupoSel = document.getElementById("filtroGrupoDetalhe");
-    const grupoDetalheSelecionado = filtroGrupoSel ? filtroGrupoSel.value : "";
-
+    // Detalhamento por grupo — mostra automaticamente cada grupo separado
+    // quando "Todos os grupos" está selecionado no filtro de cima E a pessoa
+    // tem mais de 1 grupo (com 1 só, o Geral já é a mesma coisa).
     const wrap = document.getElementById("gruposDetalhePizzas");
     if (!wrap) return;
     Object.values(chartsPizzaGrupos).forEach(c => c.destroy());
     chartsPizzaGrupos = {};
-    if (!grupoDetalheSelecionado) {
+    if (gruposEscopo.length <= 1) {
       wrap.innerHTML = "";
       return;
     }
-    const s = slugGrupo(grupoDetalheSelecionado);
-    wrap.innerHTML = `
-      <div class="card" style="margin-top:16px;">
-        <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px;">${esc(grupoDetalheSelecionado)}</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Congelado</div>
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaCongelado_${s}"></canvas></div>
-              <div id="legendaCongelado_${s}" style="flex:1;min-width:0;"></div>
+    wrap.innerHTML = gruposEscopo.map(g => {
+      const s = slugGrupo(g);
+      return `
+        <div class="card" style="margin-top:16px;">
+          <h3 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px;">${esc(g)}</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Congelado</div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaCongelado_${s}"></canvas></div>
+                <div id="legendaCongelado_${s}" style="flex:1;min-width:0;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Fechamento</div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaFechamento_${s}"></canvas></div>
+                <div id="legendaFechamento_${s}" style="flex:1;min-width:0;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Redução</div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaReducao_${s}"></canvas></div>
+                <div id="legendaReducao_${s}" style="flex:1;min-width:0;"></div>
+              </div>
             </div>
           </div>
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Fechamento</div>
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaFechamento_${s}"></canvas></div>
-              <div id="legendaFechamento_${s}" style="flex:1;min-width:0;"></div>
-            </div>
-          </div>
-          <div>
-            <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">Redução</div>
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div style="position:relative;height:120px;width:120px;flex-shrink:0;"><canvas id="pizzaReducao_${s}"></canvas></div>
-              <div id="legendaReducao_${s}" style="flex:1;min-width:0;"></div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    const dadosGrupo = calcularCFR([grupoDetalheSelecionado]);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosGrupo.congFalta, dadosGrupo.congSobra, dadosGrupo.totalInv, `legendaCongelado_${s}`);
-    montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosGrupo.fechFalta, dadosGrupo.fechSobra, dadosGrupo.totalInv, `legendaFechamento_${s}`);
-    montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosGrupo.reducaoFalta, dadosGrupo.reducaoSobra, `legendaReducao_${s}`);
+        </div>`;
+    }).join("");
+    gruposEscopo.forEach(g => {
+      const s = slugGrupo(g);
+      const dadosGrupo = calcularCFR([g]);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaCongelado_${s}`, dadosGrupo.congFalta, dadosGrupo.congSobra, dadosGrupo.totalInv, `legendaCongelado_${s}`);
+      montarPizzaValor(chartsPizzaGrupos, `pizzaFechamento_${s}`, dadosGrupo.fechFalta, dadosGrupo.fechSobra, dadosGrupo.totalInv, `legendaFechamento_${s}`);
+      montarPizzaReducao(chartsPizzaGrupos, `pizzaReducao_${s}`, dadosGrupo.reducaoFalta, dadosGrupo.reducaoSobra, `legendaReducao_${s}`);
+    });
   }
 
   // ---------- HISTÓRICO ----------
@@ -1203,16 +1193,16 @@
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = dataLocalDe(cutoff);
     const [docs, docsSit] = await Promise.all([
-      getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", ">=", cutoffStr)),
+      getDocsPorGrupos("div_resumo_diario", meuUsuario.grupos, where("data", ">=", cutoffStr)),
       getDocsPorGrupos("div_historico_situacoes", meuUsuario.grupos, where("data", ">=", cutoffStr))
     ]);
     const porDia = {};
     docs.forEach(d => {
       const h = d.data();
       if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
-      porDia[h.data].inventario += (h.inventario || 0);
-      porDia[h.data].falta += (h.vlrfalta || 0);
-      porDia[h.data].sobra += (h.vlrsobra || 0);
+      porDia[h.data].inventario += (h.totalInventario || 0);
+      porDia[h.data].falta += Math.abs(h.totalValorFalta || 0);
+      porDia[h.data].sobra += (h.totalValorSobra || 0);
     });
     docsSit.forEach(d => {
       const h = d.data();

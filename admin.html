@@ -215,7 +215,7 @@
         <div style="min-width:0;">
           <div class="num" id="pizzaComJustificativaNum" style="font-size:20px;">—</div>
           <div style="font-size:11px;color:var(--muted);" id="pizzaComJustificativaSub">—</div>
-          <div class="lbl">Com justificativa</div>
+          <div class="lbl">Com justificativa (das divergências)</div>
         </div>
       </div>
       <div class="kpi" style="flex-direction:row;align-items:center;gap:10px;">
@@ -280,12 +280,6 @@
             <div id="legendaPizzaReducao" style="flex:1;min-width:0;"></div>
           </div>
         </div>
-      </div>
-      <div style="margin-top:18px;display:flex;align-items:center;gap:10px;">
-        <label style="color:var(--muted);font-size:12px;">Ver detalhe de um usuário específico:</label>
-        <select id="filtroGrupoDetalhe" style="background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;">
-          <option value="">Nenhum (só o Geral)</option>
-        </select>
       </div>
       <div id="gruposDetalhePizzas"></div>
     </div>
@@ -547,7 +541,6 @@
 
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id === "filtroGrupoVisaoGeral") renderDashboard();
-    if (e.target && e.target.id === "filtroGrupoDetalhe") renderDashboard();
   });
 
   // ---------- NAVEGAÇÃO ENTRE SEÇÕES (delegado, funciona com itens de grupo criados depois) ----------
@@ -806,7 +799,7 @@
     document.getElementById("kpiValorResolvidoPerc").textContent = pctDoInventario(totalResolvido);
 
     const gruposEmEscopo = temFiltro ? gruposFiltro : gruposCadastrados;
-    renderResumoCFR(gruposEmEscopo);
+    renderResumoCFR(gruposEmEscopo, matriculaFiltro);
     renderNavGrupos();
     if (matriculaDetalheAtiva) renderGrupoDetalhe(matriculaDetalheAtiva);
 
@@ -908,24 +901,28 @@
   function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust, semGrupo) {
     const totalEl = document.getElementById("kpiTotal");
     if (totalEl) totalEl.textContent = total;
+    const totalDivergente = falta + sobra;
     const specs = [
-      { id: "pizzaFalta", valor: falta, cor: "#c4483a" },
-      { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1" },
-      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a" },
-      { id: "pizzaInversao", valor: inversao, cor: "#e8a33d" },
-      { id: "pizzaComJustificativa", valor: comJust, cor: "#4c9a6a" },
-      { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6" }
+      { id: "pizzaFalta", valor: falta, cor: "#c4483a", totalRef: total },
+      { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1", totalRef: total },
+      { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a", totalRef: total },
+      { id: "pizzaInversao", valor: inversao, cor: "#e8a33d", totalRef: total },
+      // Com justificativa compara contra quem TEM divergência (falta+sobra), não
+      // contra o total de SKUs — senão o número parece muito menor/menos urgente
+      // do que é de verdade (14 de 2594 soa tranquilo; 14 de 266 mostra o real atraso).
+      { id: "pizzaComJustificativa", valor: comJust, cor: "#c9a227", totalRef: totalDivergente },
+      { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6", totalRef: total }
     ];
-    specs.forEach(({ id, valor, cor }) => {
+    specs.forEach(({ id, valor, cor, totalRef }) => {
       const canvas = document.getElementById(id);
       const numEl = document.getElementById(`${id}Num`);
       const subEl = document.getElementById(`${id}Sub`);
-      const pct = total ? ((valor / total) * 100).toFixed(1) : "0.0";
+      const pct = totalRef ? ((valor / totalRef) * 100).toFixed(1) : "0.0";
       if (numEl) numEl.textContent = valor;
-      if (subEl) subEl.textContent = `de ${total} (${pct}%)`;
+      if (subEl) subEl.textContent = `de ${totalRef} (${pct}%)`;
       if (!canvas) return;
-      const resto = Math.max(total - valor, 0);
-      const dados = { total, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
+      const resto = Math.max(totalRef - valor, 0);
+      const dados = { total: totalRef, datasets: [{ data: [valor, resto], backgroundColor: [cor, "#2e3a4c"], borderWidth: 0 }] };
       if (chartsMiniContagem[id]) {
         chartsMiniContagem[id].data = dados;
         chartsMiniContagem[id].update();
@@ -1071,7 +1068,7 @@
   }
 
 
-  function renderResumoCFR(gruposEmEscopo) {
+  function renderResumoCFR(gruposEmEscopo, matriculaFiltro) {
     const geral = calcularCFR(gruposEmEscopo);
 
     const subEl = document.getElementById("resumoCFRsub");
@@ -1089,19 +1086,10 @@
     montarPizzaValor(chartsPizzaCFR, "pizzaFechamento", geral.fechFalta, geral.fechSobra, geral.totalInv, "legendaPizzaFechamento");
     montarPizzaReducao(chartsPizzaCFR, "pizzaReducao", geral.reducaoFalta, geral.reducaoSobra, "legendaPizzaReducao");
 
-    // Detalhamento por USUÁRIO (não por grupo cru) — evita uma lista gigante
-    // quando o escopo é "Todos os usuários" (que vira todo grupo cadastrado).
-    // Só mostra quando alguém específico é selecionado no filtro.
-    const filtroUsuarioSel = document.getElementById("filtroGrupoDetalhe");
-    const estoquistasComGrupo = usuariosCache.filter(u => (u.grupos || []).length > 0);
-    if (filtroUsuarioSel && filtroUsuarioSel.dataset.opcoes !== String(estoquistasComGrupo.length)) {
-      const valorAtual = filtroUsuarioSel.value;
-      filtroUsuarioSel.innerHTML = `<option value="">Nenhum (só o Geral)</option>` +
-        estoquistasComGrupo.map(u => `<option value="${esc(u.matricula)}">${esc(u.nome) || esc(u.matricula)}</option>`).join("");
-      filtroUsuarioSel.value = estoquistasComGrupo.some(u => u.matricula === valorAtual) ? valorAtual : "";
-      filtroUsuarioSel.dataset.opcoes = String(estoquistasComGrupo.length);
-    }
-    const matriculaDetalheSelecionada = filtroUsuarioSel ? filtroUsuarioSel.value : "";
+    // Detalhamento por USUÁRIO — só mostra quando o filtro principal (lá em
+    // cima) já está apontando pra uma pessoa específica. Em "Todos os
+    // usuários" fica só o Geral (evita listar todo grupo cadastrado de uma vez).
+    const matriculaDetalheSelecionada = matriculaFiltro || "";
 
     const wrap = document.getElementById("gruposDetalhePizzas");
     if (!wrap) return;
@@ -1264,16 +1252,16 @@
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = dataLocalDe(cutoff);
     const [snap, snapSit] = await Promise.all([
-      getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr))),
+      getDocs(query(collection(db, "div_resumo_diario"), where("data", ">=", cutoffStr))),
       getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)))
     ]);
     const porDia = {};
     snap.docs.forEach(d => {
       const h = d.data();
       if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
-      porDia[h.data].inventario += (h.inventario || 0);
-      porDia[h.data].falta += (h.vlrfalta || 0);
-      porDia[h.data].sobra += (h.vlrsobra || 0);
+      porDia[h.data].inventario += (h.totalInventario || 0);
+      porDia[h.data].falta += Math.abs(h.totalValorFalta || 0);
+      porDia[h.data].sobra += (h.totalValorSobra || 0);
     });
     snapSit.docs.forEach(d => {
       const h = d.data();
