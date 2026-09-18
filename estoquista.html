@@ -261,6 +261,14 @@
       <div class="import-status err" id="avisoGrupoErrado" style="display:none;font-weight:600;"></div>
       <button class="btn-del" id="btnDesfazerImport" style="display:none;margin-top:10px;">Desfazer essa importação</button>
     </div>
+
+    <div class="card">
+      <h2>Conferir volumes (Senior x WISWEB de hoje)</h2>
+      <div class="sub">Importe o CSV do WISWEB primeiro. Depois, suba aqui a planilha do Senior/Estoque (com um SKU por volume) — o sistema cruza com o Sabium de hoje e cria divergência de volume igual à de falta/sobra normal.</div>
+      <div class="dropzone" id="dropzoneVolumes">Arraste a planilha do Senior/Estoque aqui, ou clique pra escolher</div>
+      <input type="file" id="fileInputVolumes" accept=".xlsx,.xls,.csv" style="display:none;">
+      <div class="import-status" id="importStatusVolumes"></div>
+    </div>
   </section>
 
   <section id="secao-grupo-detalhe" class="secao" style="display:none;">
@@ -454,7 +462,8 @@
     "em-analise": "#c9a227",
     "inversao": "#3e7cb1",
     "resolvido": "#4c9a6a",
-    "resolvido-parcial": "#8b5cf6"
+    "resolvido-parcial": "#8b5cf6",
+    "sabium-zerado": "#e8a33d"
   };
   let congelamentoAtivo = true; // padrão seguro; admin pode desligar em div_config/geral enquanto testa
   onSnapshot(doc(db, "div_config", "geral"), (snap) => {
@@ -640,7 +649,8 @@
       { v: "em-analise", l: "Em análise" },
       { v: "inversao", l: "Inversão" },
       { v: "resolvido", l: "Resolvido" },
-      { v: "resolvido-parcial", l: "Resolvido Parcial" }
+      { v: "resolvido-parcial", l: "Resolvido Parcial" },
+      { v: "sabium-zerado", l: "Sabium Zerado" }
     ];
 
     tbody.innerHTML = rows.map(d => {
@@ -1649,6 +1659,27 @@
     fileInput.value = "";
   });
 
+  // ---------- Conferir volumes (Senior x WISWEB de hoje) ----------
+  const dropzoneVolumes = document.getElementById("dropzoneVolumes");
+  const fileInputVolumes = document.getElementById("fileInputVolumes");
+  dropzoneVolumes.addEventListener("click", () => fileInputVolumes.click());
+  ["dragenter", "dragover"].forEach(evt => {
+    dropzoneVolumes.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzoneVolumes.classList.add("dragover"); });
+  });
+  ["dragleave", "drop"].forEach(evt => {
+    dropzoneVolumes.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropzoneVolumes.classList.remove("dragover"); });
+  });
+  dropzoneVolumes.addEventListener("drop", (e) => {
+    const arquivo = (e.dataTransfer.files || [])[0];
+    if (arquivo) processarVolumesSenior(arquivo);
+  });
+  fileInputVolumes.addEventListener("change", async () => {
+    const arquivo = fileInputVolumes.files?.[0];
+    if (!arquivo) return;
+    await processarVolumesSenior(arquivo);
+    fileInputVolumes.value = "";
+  });
+
   async function handleFiles(arquivos) {
     const statusEl = document.getElementById("importStatus");
     for (let i = 0; i < arquivos.length; i++) {
@@ -1667,6 +1698,198 @@
 
   function sanitizarId(codigo) {
     return codigo.replace(/[\/\s]/g, "_");
+  }
+
+  // ---------- CONFERÊNCIA DE VOLUMES (Senior x Sabium de hoje) ----------
+  // Lógica testada isoladamente antes de entrar aqui — mesma regra da
+  // ferramenta separada de Análise de Volumes, adaptada pro fluxo diário do CDAM.
+  function parseFamiliaVolume(codigo) {
+    const m = String(codigo).trim().match(/^(.*)\/(\d+)$/);
+    if (m) return { familia: m[1], volume: parseInt(m[2], 10), standalone: false };
+    return { familia: String(codigo).trim(), volume: null, standalone: true };
+  }
+
+  function classificarFamilia({ familia, volumesSenior, sabium01, sabium83, reservaFamilia, arecolherFamilia }) {
+    const n = volumesSenior.length;
+    const isStandaloneUnico = n === 1 && volumesSenior[0].volume === null;
+    const sabiumTotal = (sabium01 === null && sabium83 === null) ? null : (sabium01 || 0) + (sabium83 || 0);
+    const arecolher = arecolherFamilia || 0;
+    const reserva = reservaFamilia || 0;
+
+    let baseline = null, baselineSource = null;
+    if (sabiumTotal !== null) {
+      baseline = sabiumTotal;
+      baselineSource = "sabium";
+    } else if (n >= 2) {
+      const contagem = {};
+      volumesSenior.forEach(v => { contagem[v.quantidade] = (contagem[v.quantidade] || 0) + 1; });
+      const entradas = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
+      if (entradas.length > 0 && (entradas.length === 1 || entradas[0][1] > entradas[1][1])) {
+        baseline = Number(entradas[0][0]);
+        baselineSource = "moda";
+      }
+    } else if (n === 1) {
+      baseline = volumesSenior[0].quantidade;
+      baselineSource = "autorreferente";
+    }
+
+    const volsPresentes = volumesSenior.filter(v => v.volume !== null).map(v => v.volume);
+    let volumesAusentes = [];
+    if (!isStandaloneUnico && volsPresentes.length > 0) {
+      const vmin = Math.min(...volsPresentes), vmax = Math.max(...volsPresentes);
+      for (let i = vmin; i <= vmax; i++) {
+        if (!volsPresentes.includes(i)) volumesAusentes.push(i);
+      }
+    }
+
+    const resultados = volumesSenior.map(v => {
+      if (baseline === null) {
+        return { ...v, tipo: "sem-baseline", diff: null, baseline: null, baselineSource: null, reservaAtivaNaFamilia: reserva > 0 };
+      }
+      const adjustedQty = v.quantidade + arecolher;
+      if (sabiumTotal === 0 && v.quantidade > 0) {
+        return { ...v, tipo: "sabium-zerado", diff: v.quantidade, baseline, baselineSource, reservaAtivaNaFamilia: reserva > 0 };
+      }
+      if (adjustedQty === baseline) {
+        return { ...v, tipo: "correto", diff: 0, baseline, baselineSource, reservaAtivaNaFamilia: reserva > 0 };
+      }
+      const diff = adjustedQty - baseline;
+      return { ...v, tipo: diff > 0 ? "sobra" : "falta", diff, baseline, baselineSource, reservaAtivaNaFamilia: reserva > 0 };
+    });
+
+    volumesAusentes.forEach(volNum => {
+      resultados.push({
+        codigo: `${familia}/${volNum}`, volume: volNum, quantidade: 0,
+        tipo: "falta", diff: baseline !== null ? -baseline : null, baseline, baselineSource,
+        ausente: true, reservaAtivaNaFamilia: reserva > 0
+      });
+    });
+
+    return { familia, isStandaloneUnico, baseline, baselineSource, resultados };
+  }
+
+  async function processarVolumesSenior(file) {
+    const statusEl = document.getElementById("importStatusVolumes");
+    statusEl.className = "import-status show";
+    statusEl.textContent = "Lendo planilha do Senior...";
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+      if (linhas.length < 2) throw new Error("Planilha vazia ou sem dados.");
+
+      const normalizar = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const cabecalho = linhas[0].map(normalizar);
+      const acharCol = (candidatos) => cabecalho.findIndex(h => candidatos.includes(h));
+      const iSku = acharCol(["codigo produto", "sku", "codigo"]);
+      const iQtd = acharCol(["quantidade", "qtd", "estoque"]);
+      const iReserva = acharCol(["reserva"]);
+      if (iSku === -1 || iQtd === -1) {
+        throw new Error("Não achei as colunas de SKU/Quantidade na planilha. Confira os nomes das colunas.");
+      }
+
+      const familias = new Map();
+      for (let i = 1; i < linhas.length; i++) {
+        const linha = linhas[i];
+        const codigoRaw = String(linha[iSku] ?? "").trim();
+        if (!codigoRaw) continue;
+        const qtd = parseFloat(String(linha[iQtd] ?? "0").replace(",", ".")) || 0;
+        const reserva = iReserva !== -1 ? (parseFloat(String(linha[iReserva] ?? "0").replace(",", ".")) || 0) : 0;
+        const { familia, volume } = parseFamiliaVolume(codigoRaw);
+        if (!familias.has(familia)) familias.set(familia, { volumes: [], reservaTotal: 0 });
+        const f = familias.get(familia);
+        f.volumes.push({ codigo: codigoRaw, volume, quantidade: qtd });
+        f.reservaTotal += reserva;
+      }
+
+      statusEl.textContent = `Buscando divergências de volume já existentes...`;
+      // Mesmo padrão do import normal: busca tudo de uma vez, em lotes de 10 grupos
+      const mapaDivergenciasVolumes = new Map();
+      for (let i = 0; i < meuUsuario.grupos.length; i += 10) {
+        const loteGrupos = meuUsuario.grupos.slice(i, i + 10);
+        const snapLote = await getDocs(query(collection(db, "div_divergencias"), where("grupo", "in", loteGrupos)));
+        snapLote.docs.forEach(d => mapaDivergenciasVolumes.set(d.id, d.data()));
+      }
+
+      statusEl.textContent = `Cruzando ${familias.size} família(s) com o Sabium de hoje...`;
+      let lote = writeBatch(db);
+      let opsNoLote = 0;
+      const commits = [];
+      function enfileirar(ref, dados) {
+        lote.set(ref, dados, { merge: true });
+        opsNoLote++;
+        if (opsNoLote >= 450) { commits.push(lote.commit()); lote = writeBatch(db); opsNoLote = 0; }
+      }
+
+      let processadas = 0, semHistoricoHoje = 0, comDivergencia = 0, semBaseline = 0, corretos = 0;
+      for (const [familia, dadosFamilia] of familias.entries()) {
+        processadas++;
+        const historicoId = `${HOJE_STR}_${sanitizarId(familia)}`;
+        let historicoSnap;
+        try {
+          historicoSnap = await getDoc(doc(db, "div_historico", historicoId));
+        } catch (e) {
+          historicoSnap = null;
+        }
+        if (!historicoSnap || !historicoSnap.exists()) { semHistoricoHoje++; continue; }
+        const h = historicoSnap.data();
+        const grupo = h.grupo;
+        if (!meuUsuario.grupos.includes(grupo)) continue;
+
+        const resultado = classificarFamilia({
+          familia,
+          volumesSenior: dadosFamilia.volumes,
+          sabium01: h.sabium01 ?? null,
+          sabium83: h.sabium83 ?? null,
+          reservaFamilia: dadosFamilia.reservaTotal,
+          arecolherFamilia: h.arecolher || 0
+        });
+
+        for (const vol of resultado.resultados) {
+          if (vol.tipo === "correto") { corretos++; continue; }
+          if (vol.tipo === "sem-baseline") { semBaseline++; continue; }
+          comDivergencia++;
+          const docIdVol = sanitizarId(vol.codigo);
+          const antigo = mapaDivergenciasVolumes.get(docIdVol);
+          const custoMedio = h.customedio || 0;
+          const valorVol = Math.abs(vol.diff || 0) * custoMedio;
+          const mesmaQtd = antigo && antigo.tipo === (vol.tipo === "sabium-zerado" ? "sobra" : vol.tipo) && antigo.quantidade === vol.diff;
+
+          const dadosBase = {
+            codigo: vol.codigo,
+            descricao: `${h.descricao || familia} (volume ${vol.volume ?? "único"})`,
+            grupo,
+            tipo: vol.tipo === "sabium-zerado" ? "sobra" : vol.tipo,
+            quantidade: vol.diff,
+            valor: valorVol,
+            data: HOJE_STR,
+            origemVolume: true,
+            familia,
+            reservaAtivaNaFamilia: vol.reservaAtivaNaFamilia,
+            ultimaEdicaoPor: meuUsuario.matricula,
+            ultimaEdicaoEm: serverTimestamp()
+          };
+          if (vol.tipo === "sabium-zerado") dadosBase.situacao = "sabium-zerado";
+
+          if (mesmaQtd) {
+            enfileirar(doc(db, "div_divergencias", docIdVol), { ...dadosBase, justificativa: antigo.justificativa || "", situacao: dadosBase.situacao || antigo.situacao || null });
+          } else {
+            enfileirar(doc(db, "div_divergencias", docIdVol), { ...dadosBase, justificativa: "", mudouQuantidade: true });
+          }
+        }
+      }
+
+      commits.push(lote.commit());
+      await Promise.all(commits);
+      atualizarSnapshotSituacoesHoje(meuUsuario.grupos[0]); // best-effort, não crítico aqui
+
+      statusEl.className = "import-status show ok";
+      statusEl.textContent = `${processadas} família(s) verificada(s): ${corretos} corretas, ${comDivergencia} com divergência de volume, ${semBaseline} sem baseline (precisam de revisão manual), ${semHistoricoHoje} sem CSV do WISWEB de hoje (ignoradas — importe o CSV primeiro).`;
+    } catch (err) {
+      console.error("Erro ao processar volumes:", err);
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Erro: " + err.message;
+    }
   }
 
   async function importarCsv(file) {
