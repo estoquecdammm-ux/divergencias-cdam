@@ -199,7 +199,7 @@
         <div style="min-width:0;">
           <div class="num" id="pizzaCorretosNum" style="font-size:20px;">—</div>
           <div style="font-size:11px;color:var(--muted);" id="pizzaCorretosSub">—</div>
-          <div class="lbl">Corretos (saldo bate)</div>
+          <div class="lbl">Acurácia (saldo bate)</div>
         </div>
       </div>
       <div class="kpi" style="flex-direction:row;align-items:center;gap:10px;">
@@ -218,12 +218,12 @@
           <div class="lbl">Com justificativa (das divergências)</div>
         </div>
       </div>
-      <div class="kpi" style="flex-direction:row;align-items:center;gap:10px;">
-        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaSemGrupo"></canvas></div>
+      <div class="kpi falta" style="flex-direction:row;align-items:center;gap:10px;">
+        <div style="position:relative;width:52px;height:52px;flex-shrink:0;"><canvas id="pizzaSemJustificativa"></canvas></div>
         <div style="min-width:0;">
-          <div class="num" id="pizzaSemGrupoNum" style="font-size:20px;">—</div>
-          <div style="font-size:11px;color:var(--muted);" id="pizzaSemGrupoSub">—</div>
-          <div class="lbl">Sem grupo atribuído</div>
+          <div class="num" id="pizzaSemJustificativaNum" style="font-size:20px;">—</div>
+          <div style="font-size:11px;color:var(--muted);" id="pizzaSemJustificativaSub">—</div>
+          <div class="lbl">Sem justificativa (das divergências)</div>
         </div>
       </div>
     </div>
@@ -309,17 +309,19 @@
     <div class="card">
       <h2>Tendência (últimos 30 dias)</h2>
       <div class="sub">Inventário, Falta, Sobra e Resolvido somados de todos os grupos, dia a dia — a partir do que cada estoquista importou. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra/Resolvido não ficarem achatadas no gráfico.</div>
-      <div style="position:relative;height:280px;margin-top:12px;">
+      <div style="position:relative;height:280px;margin-top:12px;" id="chartTendenciaHistoricoWrap">
         <canvas id="chartTendenciaHistorico"></canvas>
       </div>
+      <div id="chartTendenciaHistoricoStatus" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:40px 0;"></div>
     </div>
 
     <div class="card">
       <h2>Tendência de status (a partir de hoje)</h2>
       <div class="sub">Quantidade de SKUs em Resolvido, Resolvido Parcial e Inversão, dia a dia. Esse retrato começou a ser salvo agora — antes disso o sistema só sabia o status "ao vivo" de hoje, sem histórico do passado.</div>
-      <div style="position:relative;height:280px;margin-top:12px;">
+      <div style="position:relative;height:280px;margin-top:12px;" id="chartTendenciaSituacoesWrap">
         <canvas id="chartTendenciaSituacoes"></canvas>
       </div>
+      <div id="chartTendenciaSituacoesStatus" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:40px 0;"></div>
     </div>
 
     <div class="card">
@@ -769,8 +771,7 @@
     const nInversao = divsFiltradas.filter(d => d.situacao === "inversao").length;
     const nComJust = divsFiltradas.filter(d => d.justificativa).length;
     const gruposCadastrados = gruposCache.map(g => g.nome);
-    const nSemGrupo = temFiltro ? 0 : divsFiltradas.filter(d => !gruposCadastrados.includes(d.grupo)).length;
-    renderPizzaContagem(nTotal, nFalta, nSobra, nCorretos, nInversao, nComJust, nSemGrupo);
+    renderPizzaContagem(nTotal, nFalta, nSobra, nCorretos, nInversao, nComJust);
 
     // KPIs de R$ — esses sim respeitam o filtro de usuário (que fica dentro da caixa de inventário)
     const resumosFiltrados = temFiltro ? resumoHojeCache.filter(r => gruposFiltro.includes(r.grupo)) : resumoHojeCache;
@@ -898,20 +899,21 @@
 
   let chartsMiniContagem = {};
 
-  function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust, semGrupo) {
+  function renderPizzaContagem(total, falta, sobra, corretos, inversao, comJust) {
     const totalEl = document.getElementById("kpiTotal");
     if (totalEl) totalEl.textContent = total;
     const totalDivergente = falta + sobra;
+    const semJustificativa = Math.max(totalDivergente - comJust, 0);
     const specs = [
       { id: "pizzaFalta", valor: falta, cor: "#c4483a", totalRef: total },
       { id: "pizzaSobra", valor: sobra, cor: "#3e7cb1", totalRef: total },
       { id: "pizzaCorretos", valor: corretos, cor: "#4c9a6a", totalRef: total },
       { id: "pizzaInversao", valor: inversao, cor: "#e8a33d", totalRef: total },
-      // Com justificativa compara contra quem TEM divergência (falta+sobra), não
-      // contra o total de SKUs — senão o número parece muito menor/menos urgente
-      // do que é de verdade (14 de 2594 soa tranquilo; 14 de 266 mostra o real atraso).
+      // Com justificativa e Sem justificativa comparam contra quem TEM
+      // divergência (falta+sobra), não contra o total de SKUs — senão o
+      // número parece muito menor/menos urgente do que é de verdade.
       { id: "pizzaComJustificativa", valor: comJust, cor: "#c9a227", totalRef: totalDivergente },
-      { id: "pizzaSemGrupo", valor: semGrupo, cor: "#8b97a6", totalRef: total }
+      { id: "pizzaSemJustificativa", valor: semJustificativa, cor: "#c4483a", totalRef: totalDivergente }
     ];
     specs.forEach(({ id, valor, cor, totalRef }) => {
       const canvas = document.getElementById(id);
@@ -1011,7 +1013,7 @@
     if (!canvas) return;
     const correto = Math.max(totalRef - falta - sobra, 0);
     const dados = {
-      labels: ["Falta", "Sobra", "Correto"],
+      labels: ["Falta", "Sobra", "Acurácia"],
       datasets: [{ data: [falta, sobra, correto], backgroundColor: ["#c4483a", "#3e7cb1", "#4c9a6a"], borderWidth: 0 }]
     };
     const opcoes = {
@@ -1032,7 +1034,7 @@
       montarLegendaPizza(legendaId, [
         { label: "Falta", valor: falta, formatado: formatBRL(falta), cor: "#c4483a" },
         { label: "Sobra", valor: sobra, formatado: formatBRL(sobra), cor: "#3e7cb1" },
-        { label: "Correto", valor: correto, formatado: formatBRL(correto), cor: "#4c9a6a" }
+        { label: "Acurácia", valor: correto, formatado: formatBRL(correto), cor: "#4c9a6a" }
       ]);
     }
   }
@@ -1248,57 +1250,70 @@
     const canvas = document.getElementById("chartTendenciaHistorico");
     if (!canvas || canvas.dataset.carregado === "1") return;
     canvas.dataset.carregado = "1";
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = dataLocalDe(cutoff);
-    const [snap, snapSit] = await Promise.all([
-      getDocs(query(collection(db, "div_resumo_diario"), where("data", ">=", cutoffStr))),
-      getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)))
-    ]);
-    const porDia = {};
-    snap.docs.forEach(d => {
-      const h = d.data();
-      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
-      porDia[h.data].inventario += (h.totalInventario || 0);
-      porDia[h.data].falta += Math.abs(h.totalValorFalta || 0);
-      porDia[h.data].sobra += (h.totalValorSobra || 0);
-    });
-    snapSit.docs.forEach(d => {
-      const h = d.data();
-      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
-      porDia[h.data].resolvido += (h.valorResolvido || 0);
-    });
-    const dias = Object.keys(porDia).sort();
-    if (dias.length === 0) {
-      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há histórico suficiente pra mostrar tendência.</div>`;
-      return;
-    }
-    const dados = {
-      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
-      datasets: [
-        { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
-        { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
-        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
-        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
-      ]
-    };
-    new Chart(canvas, {
-      type: "line",
-      data: dados,
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { labels: { color: "#edeff2" } },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBRL(ctx.raw)}` } }
-        },
-        scales: {
-          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
-          y: { type: "linear", position: "left", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Inventário", color: "#8b97a6" } },
-          y1: { type: "linear", position: "right", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { drawOnChartArea: false }, title: { display: true, text: "Falta / Sobra", color: "#8b97a6" } }
-        }
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = dataLocalDe(cutoff);
+      const [snap, snapSit] = await Promise.all([
+        getDocs(query(collection(db, "div_resumo_diario"), where("data", ">=", cutoffStr))),
+        getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)))
+      ]);
+      const porDia = {};
+      snap.docs.forEach(d => {
+        const h = d.data();
+        if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
+        porDia[h.data].inventario += (h.totalInventario || 0);
+        porDia[h.data].falta += Math.abs(h.totalValorFalta || 0);
+        porDia[h.data].sobra += (h.totalValorSobra || 0);
+      });
+      snapSit.docs.forEach(d => {
+        const h = d.data();
+        if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
+        porDia[h.data].resolvido += (h.valorResolvido || 0);
+      });
+      const dias = Object.keys(porDia).sort();
+      if (dias.length === 0) {
+        document.getElementById("chartTendenciaHistoricoWrap").style.display = "none";
+        const statusEl = document.getElementById("chartTendenciaHistoricoStatus");
+        statusEl.style.display = "";
+        statusEl.textContent = "Ainda não há histórico suficiente pra mostrar tendência.";
+        return;
       }
-    });
+      const dados = {
+        labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+        datasets: [
+          { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
+          { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+          { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+          { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
+        ]
+      };
+      new Chart(canvas, {
+        type: "line",
+        data: dados,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#edeff2" } },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBRL(ctx.raw)}` } }
+          },
+          scales: {
+            x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+            y: { type: "linear", position: "left", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Inventário", color: "#8b97a6" } },
+            y1: { type: "linear", position: "right", ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { drawOnChartArea: false }, title: { display: true, text: "Falta / Sobra", color: "#8b97a6" } }
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Erro carregando tendência de histórico:", err);
+      document.getElementById("chartTendenciaHistoricoWrap").style.display = "none";
+      const statusEl = document.getElementById("chartTendenciaHistoricoStatus");
+      statusEl.style.display = "";
+      statusEl.style.color = "#e08979";
+      statusEl.textContent = `Erro ao carregar o gráfico: ${err.message}. Sai e volta na aba Histórico pra tentar de novo.`;
+      canvas.dataset.carregado = "0";
+    }
   }
 
   // Tendência de contagem de status (Resolvido / Resolvido Parcial / Inversão) —
@@ -1307,47 +1322,60 @@
     const canvas = document.getElementById("chartTendenciaSituacoes");
     if (!canvas || canvas.dataset.carregado === "1") return;
     canvas.dataset.carregado = "1";
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = dataLocalDe(cutoff);
-    const snap = await getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)));
-    const porDia = {};
-    snap.docs.forEach(d => {
-      const h = d.data();
-      if (!porDia[h.data]) porDia[h.data] = { resolvido: 0, resolvidoParcial: 0, inversao: 0 };
-      porDia[h.data].resolvido += (h.contagens?.resolvido || 0);
-      porDia[h.data].resolvidoParcial += (h.contagens?.resolvidoParcial || 0);
-      porDia[h.data].inversao += (h.contagens?.inversao || 0);
-    });
-    const dias = Object.keys(porDia).sort();
-    if (dias.length === 0) {
-      canvas.parentElement.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Ainda não há retrato de status suficiente — esse histórico começou a ser salvo a partir de hoje, então vai crescendo dia a dia.</div>`;
-      return;
-    }
-    const dados = {
-      labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
-      datasets: [
-        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2 },
-        { label: "Resolvido Parcial", data: dias.map(d => porDia[d].resolvidoParcial), borderColor: "#c9a227", backgroundColor: "transparent", tension: 0.2 },
-        { label: "Inversão", data: dias.map(d => porDia[d].inversao), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2 }
-      ]
-    };
-    new Chart(canvas, {
-      type: "line",
-      data: dados,
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { labels: { color: "#edeff2" } },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} SKU(s)` } }
-        },
-        scales: {
-          x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
-          y: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Qtd de SKUs", color: "#8b97a6" }, beginAtZero: true }
-        }
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = dataLocalDe(cutoff);
+      const snap = await getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)));
+      const porDia = {};
+      snap.docs.forEach(d => {
+        const h = d.data();
+        if (!porDia[h.data]) porDia[h.data] = { resolvido: 0, resolvidoParcial: 0, inversao: 0 };
+        porDia[h.data].resolvido += (h.contagens?.resolvido || 0);
+        porDia[h.data].resolvidoParcial += (h.contagens?.resolvidoParcial || 0);
+        porDia[h.data].inversao += (h.contagens?.inversao || 0);
+      });
+      const dias = Object.keys(porDia).sort();
+      if (dias.length === 0) {
+        document.getElementById("chartTendenciaSituacoesWrap").style.display = "none";
+        const statusEl = document.getElementById("chartTendenciaSituacoesStatus");
+        statusEl.style.display = "";
+        statusEl.textContent = "Ainda não há retrato de status suficiente — esse histórico começou a ser salvo a partir de hoje, então vai crescendo dia a dia.";
+        return;
       }
-    });
+      const dados = {
+        labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+        datasets: [
+          { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2 },
+          { label: "Resolvido Parcial", data: dias.map(d => porDia[d].resolvidoParcial), borderColor: "#c9a227", backgroundColor: "transparent", tension: 0.2 },
+          { label: "Inversão", data: dias.map(d => porDia[d].inversao), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2 }
+        ]
+      };
+      new Chart(canvas, {
+        type: "line",
+        data: dados,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#edeff2" } },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw} SKU(s)` } }
+          },
+          scales: {
+            x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+            y: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" }, title: { display: true, text: "Qtd de SKUs", color: "#8b97a6" }, beginAtZero: true }
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Erro carregando tendência de situações:", err);
+      document.getElementById("chartTendenciaSituacoesWrap").style.display = "none";
+      const statusEl = document.getElementById("chartTendenciaSituacoesStatus");
+      statusEl.style.display = "";
+      statusEl.style.color = "#e08979";
+      statusEl.textContent = `Erro ao carregar o gráfico: ${err.message}. Sai e volta na aba Histórico pra tentar de novo.`;
+      canvas.dataset.carregado = "0";
+    }
   }
 
   async function carregarDiasHistoricoAdmin() {
