@@ -98,6 +98,19 @@
   input.just:focus{outline:none;border-color:var(--accent);}
   .meta-edit{font-size:11px;color:var(--muted);margin-top:4px;}
   .empty-row td{padding:36px;text-align:center;color:var(--muted);font-size:13px;}
+  @keyframes piscarAlerta {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(196,72,58,0.7); border-color: #c4483a; }
+    50% { box-shadow: 0 0 24px 6px rgba(196,72,58,0.9); border-color: #ff6b52; }
+  }
+  .card-alerta-pendente {
+    animation: piscarAlerta 1.1s infinite;
+    border-width: 2px;
+    background: rgba(196,72,58,0.12);
+  }
+  .card-alerta-ok {
+    border-color: var(--ok);
+    background: rgba(76,154,106,0.10);
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -130,6 +143,16 @@
   </header>
 
   <section id="secao-minhas" class="secao">
+    <div class="card" id="cardAlertaPendentes" style="display:none;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="font-size:32px;" id="alertaPendentesIcone">⚠️</div>
+        <div>
+          <div style="font-size:16px;font-weight:700;" id="alertaPendentesTitulo">—</div>
+          <div style="font-size:13px;color:var(--muted);" id="alertaPendentesSub">—</div>
+        </div>
+      </div>
+    </div>
+
     <div class="kpi-row" style="grid-template-columns:repeat(6,1fr);">
       <div class="kpi"><div class="num" id="kpiTotal">—</div><div class="lbl">Total de SKUs</div></div>
       <div class="kpi falta" style="flex-direction:row;align-items:center;gap:10px;">
@@ -507,6 +530,31 @@
   }
 
   // ---------- FILTRO DE ESTADO ----------
+  // Card que chama atenção enquanto existir código SEM situação e SEM
+  // justificativa preenchida — só some/acalma quando todos tiverem os dois.
+  function renderAlertaPendentes() {
+    const card = document.getElementById("cardAlertaPendentes");
+    if (!card) return;
+    const meusGrupos = meuUsuario.grupos || [];
+    const pendentes = divergenciasCache.filter(d =>
+      meusGrupos.includes(d.grupo) && !d.situacao && !(d.justificativa && d.justificativa.trim())
+    );
+    card.style.display = "";
+    if (pendentes.length > 0) {
+      card.className = "card card-alerta-pendente";
+      document.getElementById("alertaPendentesIcone").textContent = "⚠️";
+      document.getElementById("alertaPendentesTitulo").textContent =
+        `${pendentes.length} código(s) sem situação e sem justificativa!`;
+      document.getElementById("alertaPendentesSub").textContent =
+        "Preenche a situação e escreve uma justificativa (mín. 30 caracteres) pra esse alerta parar.";
+    } else {
+      card.className = "card card-alerta-ok";
+      document.getElementById("alertaPendentesIcone").textContent = "✅";
+      document.getElementById("alertaPendentesTitulo").textContent = "Tudo certo por aqui!";
+      document.getElementById("alertaPendentesSub").textContent = "Todo código tem situação e justificativa preenchidas.";
+    }
+  }
+
   function renderStateRow() {
     const doGrupo = divergenciasCache.filter(d => d.grupo === grupoAtivo);
     const nFalta = doGrupo.filter(d => d.tipo === "falta").length;
@@ -684,12 +732,27 @@
     tbody.querySelectorAll("input.just[data-id]").forEach(inp => {
       inp.addEventListener("change", async () => {
         const id = inp.dataset.id;
+        const valor = inp.value.trim();
+        // Justificativa não pode ser um texto curto/vago — exige pelo menos
+        // 30 caracteres pra forçar uma explicação de verdade. Campo vazio
+        // (limpar a justificativa) continua permitido.
+        if (valor.length > 0 && valor.length < 30) {
+          inp.style.borderColor = "#c4483a";
+          inp.title = `Faltam ${30 - valor.length} caractere(s) — a justificativa precisa ter pelo menos 30 caracteres.`;
+          inp.reportValidity && inp.setCustomValidity && inp.setCustomValidity(inp.title);
+          alert(`A justificativa precisa ter pelo menos 30 caracteres (tem ${valor.length} agora). Continue escrevendo e tente salvar de novo.`);
+          inp.focus();
+          return;
+        }
+        inp.style.borderColor = "";
+        if (inp.setCustomValidity) inp.setCustomValidity("");
         await setDoc(doc(db, "div_divergencias", id), {
-          justificativa: inp.value.trim(),
+          justificativa: valor,
           mudouQuantidade: false,
           ultimaEdicaoPor: meuUsuario.matricula,
           ultimaEdicaoEm: serverTimestamp()
         }, { merge: true });
+        atualizarSnapshotSituacoesHoje(grupoAtivo);
       });
     });
   }
@@ -739,6 +802,7 @@
         renderStateRow();
         renderTable();
         renderValoresKpi();
+        renderAlertaPendentes();
       }, (err) => {
         console.error("Erro carregando divergências:", err);
         document.getElementById("tableBody").innerHTML =
