@@ -533,6 +533,18 @@
 
   const app = initializeApp(firebaseConfig);
 
+  // Data de HOJE no fuso horário local do navegador (não em UTC como toISOString() faz sozinho).
+  // Sem isso, qualquer coisa feita depois das 21h (horário de Brasília, UTC-3) já
+  // registra a data de amanhã, e essa data errada conta como "hoje" por quase todo o dia seguinte.
+  function dataLocalDe(d) {
+    const tzOffsetMs = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
+  }
+  function dataLocalHoje() {
+    return dataLocalDe(new Date());
+  }
+
+
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id === "filtroGrupoVisaoGeral") renderDashboard();
     if (e.target && e.target.id === "filtroGrupoDetalhe") renderDashboard();
@@ -670,7 +682,7 @@
   });
 
   // ---------- RESUMO DIÁRIO: para os KPIs de R$ e acompanhamento ----------
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalHoje();
   let resumoHojeCache = [];
   onSnapshot(query(collection(db, "div_resumo_diario"), where("data", "==", hoje)), (snap) => {
     resumoHojeCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -777,7 +789,7 @@
     // só não entra mais nessa soma acumulada de um dia pro outro.
     const solucionadosFiltrados = (temFiltro ? solucionadosCache.filter(d => gruposFiltro.includes(d.grupo)) : solucionadosCache)
       .filter(d => d.data === hoje);
-    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && d.ultimaEdicaoEm.toDate().toISOString().slice(0, 10) === hoje;
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && dataLocalDe(d.ultimaEdicaoEm.toDate()) === hoje;
     const divergenciasResolvidasManual = (temFiltro ? divergenciasCache.filter(d => gruposFiltro.includes(d.grupo)) : divergenciasCache)
       .filter(d => (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d));
     const totalResolvido =
@@ -1250,7 +1262,7 @@
     canvas.dataset.carregado = "1";
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = dataLocalDe(cutoff);
     const [snap, snapSit] = await Promise.all([
       getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr))),
       getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)))
@@ -1309,7 +1321,7 @@
     canvas.dataset.carregado = "1";
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = dataLocalDe(cutoff);
     const snap = await getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)));
     const porDia = {};
     snap.docs.forEach(d => {
@@ -1365,7 +1377,7 @@
 
     const snap = await getDocs(collection(db, "div_resumo_diario"));
     const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = dataLocalHoje();
 
     selectDia.innerHTML = `<option value="">Selecione o dia...</option>` +
       dias.map(d => {
@@ -1501,7 +1513,7 @@
 
     const snap = await getDocs(collection(db, "div_resumo_diario"));
     const dias = [...new Set(snap.docs.map(d => d.data().data))].sort().reverse();
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = dataLocalHoje();
 
     selectDia.innerHTML = dias.map(d => {
       const [ano, mes, dia] = d.split("-");

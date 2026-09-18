@@ -375,6 +375,18 @@
   };
 
   const app = initializeApp(firebaseConfig);
+
+  // Data de HOJE no fuso horário local do navegador (não em UTC como toISOString() faz sozinho).
+  // Sem isso, qualquer coisa feita depois das 21h (horário de Brasília, UTC-3) já
+  // registra a data de amanhã, e essa data errada conta como "hoje" por quase todo o dia seguinte.
+  function dataLocalDe(d) {
+    const tzOffsetMs = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
+  }
+  function dataLocalHoje() {
+    return dataLocalDe(new Date());
+  }
+
   const auth = getAuth(app);
   setPersistence(auth, browserSessionPersistence); // login por aba, não compartilhado entre abas
   const db = getFirestore(app);
@@ -415,7 +427,7 @@
   let solucionadosCache = [];
   let resumoHojeCache = [];
   let historicoHojeCache = []; // todo SKU lido no CSV de hoje (com ou sem divergência) — pro card Total de SKUs
-  const HOJE_STR = new Date().toISOString().slice(0, 10); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
+  const HOJE_STR = dataLocalHoje(); // congela comparação: qualquer divergência com data != hoje fica travada pra edição
 
   // Cores por situação — usadas no select da tabela e nos badges do admin
   const CORES_SITUACAO = {
@@ -802,7 +814,7 @@
     // passado e só sobrevive se a gente salvar aqui).
     const snapSol = await getDocs(query(collection(db, "div_solucionados"), where("grupo", "==", grupo), where("data", "==", HOJE_STR)));
     const valorSolucionadosHoje = snapSol.docs.reduce((s, d) => s + (d.data().valorAjustado || 0), 0);
-    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && d.ultimaEdicaoEm.toDate().toISOString().slice(0, 10) === HOJE_STR;
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && dataLocalDe(d.ultimaEdicaoEm.toDate()) === HOJE_STR;
     const valorManualHoje = divsDoGrupo
       .filter(d => (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d))
       .reduce((s, d) => s + (Math.abs(d.valor || 0) - valorRestante(d)), 0);
@@ -853,7 +865,7 @@
     // "Valor total resolvido" mostra só o que foi resolvido HOJE — o histórico
     // completo continua salvo no banco, só não entra mais nessa soma acumulada.
     const solDoEscopo = solucionadosCache.filter(d => gruposEscopo.includes(d.grupo) && d.data === HOJE_STR);
-    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && d.ultimaEdicaoEm.toDate().toISOString().slice(0, 10) === HOJE_STR;
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && dataLocalDe(d.ultimaEdicaoEm.toDate()) === HOJE_STR;
     const divergenciasResolvidasManual = divergenciasCache.filter(d => gruposEscopo.includes(d.grupo) && (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d));
     const totalResolvido =
       solDoEscopo.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
@@ -1125,7 +1137,7 @@
     canvas.dataset.carregado = "1";
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = dataLocalDe(cutoff);
     const [docs, docsSit] = await Promise.all([
       getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", ">=", cutoffStr)),
       getDocsPorGrupos("div_historico_situacoes", meuUsuario.grupos, where("data", ">=", cutoffStr))
@@ -1184,7 +1196,7 @@
     canvas.dataset.carregado = "1";
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = dataLocalDe(cutoff);
     const docs = await getDocsPorGrupos("div_historico_situacoes", meuUsuario.grupos, where("data", ">=", cutoffStr));
     const porDia = {};
     docs.forEach(d => {
@@ -1666,7 +1678,7 @@
       // acumula totais por grupo, considerando TODOS os códigos (não só os com divergência)
       const totaisPorGrupo = {}; // { nomeGrupo: { totalInventario, totalValorFalta, totalValorSobra } }
       const codigosVistosPorGrupo = {}; // { nomeGrupo: Set(docId) } — pra detectar código que sumiu do relatório
-      const hojeHistorico = new Date().toISOString().slice(0, 10);
+      const hojeHistorico = dataLocalHoje();
 
       for (let i = 1; i < linhas.length; i++) {
         const cols = linhas[i].split(";");
@@ -1832,7 +1844,7 @@
       await Promise.all(commitsPendentes);
 
       // salva o resumo do dia por grupo (usado nos KPIs do admin)
-      const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const hoje = dataLocalHoje(); // YYYY-MM-DD
       for (const [nomeGrupo, totais] of Object.entries(totaisPorGrupo)) {
         const grupoId = nomeGrupo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-");
         const resumoId = `${hoje}_${grupoId}`;
