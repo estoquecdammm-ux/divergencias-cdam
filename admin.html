@@ -314,7 +314,7 @@
   <section id="secao-historico" class="secao" style="display:none;">
     <div class="card">
       <h2>Tendência (últimos 30 dias)</h2>
-      <div class="sub">Inventário, Falta e Sobra somados de todos os grupos, dia a dia — a partir do que cada estoquista importou. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra não ficarem achatadas no gráfico.</div>
+      <div class="sub">Inventário, Falta, Sobra e Resolvido somados de todos os grupos, dia a dia — a partir do que cada estoquista importou. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra/Resolvido não ficarem achatadas no gráfico.</div>
       <div style="position:relative;height:280px;margin-top:12px;">
         <canvas id="chartTendenciaHistorico"></canvas>
       </div>
@@ -1251,14 +1251,22 @@
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const snap = await getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr)));
+    const [snap, snapSit] = await Promise.all([
+      getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr))),
+      getDocs(query(collection(db, "div_historico_situacoes"), where("data", ">=", cutoffStr)))
+    ]);
     const porDia = {};
     snap.docs.forEach(d => {
       const h = d.data();
-      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0 };
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
       porDia[h.data].inventario += (h.inventario || 0);
       porDia[h.data].falta += (h.vlrfalta || 0);
       porDia[h.data].sobra += (h.vlrsobra || 0);
+    });
+    snapSit.docs.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
+      porDia[h.data].resolvido += (h.valorResolvido || 0);
     });
     const dias = Object.keys(porDia).sort();
     if (dias.length === 0) {
@@ -1270,7 +1278,8 @@
       datasets: [
         { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
         { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
-        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
+        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
       ]
     };
     new Chart(canvas, {

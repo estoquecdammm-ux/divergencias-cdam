@@ -280,7 +280,7 @@
   <section id="secao-historico" class="secao" style="display:none;">
     <div class="card">
       <h2>Tendência (últimos 30 dias)</h2>
-      <div class="sub">Inventário, Falta e Sobra somados dos seus grupos, dia a dia. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra não ficarem achatadas no gráfico.</div>
+      <div class="sub">Inventário, Falta, Sobra e Resolvido somados dos seus grupos, dia a dia. Inventário fica num eixo separado (valor bem maior) pra Falta/Sobra/Resolvido não ficarem achatadas no gráfico.</div>
       <div style="position:relative;height:280px;margin-top:12px;">
         <canvas id="chartTendenciaHistorico"></canvas>
       </div>
@@ -795,10 +795,23 @@
       inversao: divsDoGrupo.filter(d => d.situacao === "inversao").length,
       resolvido: divsDoGrupo.filter(d => d.situacao === "resolvido").length
     };
+
+    // Valor resolvido HOJE pra esse grupo — mesma lógica do card "Valor total
+    // resolvido" do painel, mas calculado aqui pra ficar congelado no histórico
+    // (o card ao vivo mostra só hoje; a partir de amanhã, esse número vira
+    // passado e só sobrevive se a gente salvar aqui).
+    const snapSol = await getDocs(query(collection(db, "div_solucionados"), where("grupo", "==", grupo), where("data", "==", HOJE_STR)));
+    const valorSolucionadosHoje = snapSol.docs.reduce((s, d) => s + (d.data().valorAjustado || 0), 0);
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && d.ultimaEdicaoEm.toDate().toISOString().slice(0, 10) === HOJE_STR;
+    const valorManualHoje = divsDoGrupo
+      .filter(d => (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d))
+      .reduce((s, d) => s + (Math.abs(d.valor || 0) - valorRestante(d)), 0);
+    const valorResolvido = valorSolucionadosHoje + valorManualHoje;
+
     const docId = `${HOJE_STR}_${sanitizarId(grupo)}`;
     try {
       await setDoc(doc(db, "div_historico_situacoes", docId), {
-        data: HOJE_STR, grupo, contagens, atualizadoEm: serverTimestamp()
+        data: HOJE_STR, grupo, contagens, valorResolvido, atualizadoEm: serverTimestamp()
       }, { merge: true });
     } catch (err) {
       console.error("Erro ao salvar retrato diário de situações:", err);
@@ -1113,14 +1126,22 @@
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const docs = await getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", ">=", cutoffStr));
+    const [docs, docsSit] = await Promise.all([
+      getDocsPorGrupos("div_historico", meuUsuario.grupos, where("data", ">=", cutoffStr)),
+      getDocsPorGrupos("div_historico_situacoes", meuUsuario.grupos, where("data", ">=", cutoffStr))
+    ]);
     const porDia = {};
     docs.forEach(d => {
       const h = d.data();
-      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0 };
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
       porDia[h.data].inventario += (h.inventario || 0);
       porDia[h.data].falta += (h.vlrfalta || 0);
       porDia[h.data].sobra += (h.vlrsobra || 0);
+    });
+    docsSit.forEach(d => {
+      const h = d.data();
+      if (!porDia[h.data]) porDia[h.data] = { inventario: 0, falta: 0, sobra: 0, resolvido: 0 };
+      porDia[h.data].resolvido += (h.valorResolvido || 0);
     });
     const dias = Object.keys(porDia).sort();
     if (dias.length === 0) {
@@ -1132,7 +1153,8 @@
       datasets: [
         { label: "Inventário", data: dias.map(d => porDia[d].inventario), borderColor: "#8b97a6", backgroundColor: "transparent", tension: 0.2, yAxisID: "y" },
         { label: "Falta", data: dias.map(d => porDia[d].falta), borderColor: "#c4483a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
-        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
+        { label: "Sobra", data: dias.map(d => porDia[d].sobra), borderColor: "#3e7cb1", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" },
+        { label: "Resolvido", data: dias.map(d => porDia[d].resolvido), borderColor: "#4c9a6a", backgroundColor: "transparent", tension: 0.2, yAxisID: "y1" }
       ]
     };
     new Chart(canvas, {
