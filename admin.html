@@ -131,6 +131,7 @@
   <a class="nav-item active" href="#" data-secao="visao-geral"><span class="ic">▤</span><span>Visão geral</span></a>
   <a class="nav-item" href="#" data-secao="acompanhamento"><span class="ic">📶</span><span>Acompanhamento por pessoa</span></a>
   <a class="nav-item" href="#" data-secao="historico"><span class="ic">🕘</span><span>Histórico</span></a>
+  <a class="nav-item" href="#" data-secao="apresentacao"><span class="ic">📊</span><span>Apresentação</span></a>
   <div class="nav-section">USUÁRIOS</div>
   <div id="navGrupos"></div>
   <div class="nav-section">GESTÃO</div>
@@ -346,6 +347,66 @@
     <div class="paginacao" id="histPaginacaoAdmin"></div>
   </section>
 
+  <section id="secao-apresentacao" class="secao" style="display:none;">
+    <div class="card" style="text-align:center;padding:30px 20px;">
+      <div style="font-size:13px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;">Divergências CDAM — filial 083</div>
+      <div style="font-size:15px;color:var(--text);" id="apresDataHoje">—</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:20px;">
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;" id="apresInventario">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Valor total do inventário</div>
+      </div>
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;color:#4c9a6a;" id="apresAcuracia">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Acurácia do estoque</div>
+      </div>
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;color:#4c9a6a;" id="apresResolvidoHoje">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Resolvido hoje</div>
+      </div>
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;" id="apresTotalSkus">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Total de SKUs conferidos</div>
+      </div>
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;color:#e08979;" id="apresFalta">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Valor em falta</div>
+      </div>
+      <div class="card" style="text-align:center;padding:26px 18px;">
+        <div style="font-size:36px;font-weight:700;color:#8ec1e6;" id="apresSobra">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Valor em sobra</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Evolução (últimos 30 dias)</h2>
+      <div class="sub">Acompanha se a acurácia do estoque está melhorando dia a dia.</div>
+      <div style="position:relative;height:300px;margin-top:12px;" id="apresTendenciaWrap">
+        <canvas id="apresTendenciaChart"></canvas>
+      </div>
+      <div id="apresTendenciaStatus" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:40px 0;"></div>
+    </div>
+
+    <div class="card" style="overflow-x:auto;">
+      <h2>Por grupo</h2>
+      <div class="sub">Mesmos números, quebrados por departamento.</div>
+      <table style="margin-top:8px;">
+        <thead>
+          <tr>
+            <th>Grupo</th>
+            <th class="col-num">Inventário</th>
+            <th class="col-num">Falta</th>
+            <th class="col-num">Sobra</th>
+            <th class="col-num">Acurácia</th>
+          </tr>
+        </thead>
+        <tbody id="apresTabelaGrupos"><tr class="empty-row"><td colspan="5">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
   <section id="secao-usuarios" class="secao" style="display:none;">
     <div class="card">
       <div class="card-head">
@@ -533,6 +594,7 @@
     "visao-geral": "Visão geral — divergências",
     "acompanhamento": "Acompanhamento por pessoa",
     "historico": "Histórico",
+    "apresentacao": "Apresentação",
     "usuarios": "Usuários",
     "grupos": "Grupos",
     "excel": "Exportar Excel"
@@ -559,6 +621,7 @@
     }
 
     if (alvo === "historico") { carregarDiasHistoricoAdmin(); carregarTendenciaHistoricoAdmin(); carregarTendenciaSituacoesAdmin(); }
+    if (alvo === "apresentacao") { carregarTendenciaApresentacao(); renderApresentacao(); }
     if (alvo === "excel") inicializarExportarAdmin();
   });
 
@@ -787,6 +850,7 @@
     renderResumoCFR(gruposEmEscopo, matriculaFiltro);
     renderNavGrupos();
     if (matriculaDetalheAtiva) renderGrupoDetalhe(matriculaDetalheAtiva);
+    renderApresentacao();
 
     // Acompanhamento por pessoa
     const tbody = document.getElementById("acompanhamentoBody");
@@ -1230,6 +1294,114 @@
   let histDadosDoDiaAdmin = [];
 
   // Tendência de 30 dias (Inventário, Falta, Sobra) — todos os grupos, admin vê tudo
+  // ---------- APRESENTAÇÃO (tela bonita pra gestores, sempre "Todos os grupos") ----------
+  function renderApresentacao() {
+    const dataEl = document.getElementById("apresDataHoje");
+    if (!dataEl) return; // seção ainda não existe no DOM (não deveria acontecer, mas por segurança)
+    dataEl.textContent = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+
+    const totalInv = resumoHojeCache.reduce((s, r) => s + (r.totalInventario || 0), 0);
+    const totalFalta = resumoHojeCache.reduce((s, r) => s + Math.abs(r.totalValorFalta || 0), 0);
+    const totalSobra = resumoHojeCache.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+    const acuracia = totalInv ? ((totalInv - totalFalta - totalSobra) / totalInv) * 100 : 100;
+
+    const solucionadosHoje = solucionadosCache.filter(d => d.data === hoje);
+    const foiResolvidoHoje = (d) => d.ultimaEdicaoEm?.toDate && dataLocalDe(d.ultimaEdicaoEm.toDate()) === hoje;
+    const resolvidasManualHoje = divergenciasCache.filter(d => (d.situacao === "resolvido" || d.situacao === "resolvido-parcial") && foiResolvidoHoje(d));
+    const totalResolvidoHoje =
+      solucionadosHoje.reduce((s, d) => s + (d.valorAjustado || 0), 0) +
+      resolvidasManualHoje.reduce((s, d) => s + (Math.abs(d.valor || 0) - valorRestante(d)), 0);
+
+    document.getElementById("apresInventario").textContent = formatBRL(totalInv);
+    document.getElementById("apresAcuracia").textContent = acuracia.toFixed(2) + "%";
+    document.getElementById("apresResolvidoHoje").textContent = formatBRL(totalResolvidoHoje);
+    document.getElementById("apresFalta").textContent = formatBRL(totalFalta);
+    document.getElementById("apresSobra").textContent = formatBRL(totalSobra);
+    document.getElementById("apresTotalSkus").textContent = historicoHojeCache.length;
+
+    const tbody = document.getElementById("apresTabelaGrupos");
+    if (gruposCache.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Nenhum grupo cadastrado.</td></tr>`;
+    } else {
+      tbody.innerHTML = gruposCache.map(g => {
+        const resumosGrupo = resumoHojeCache.filter(r => r.grupo === g.nome);
+        const temImportacaoHoje = resumosGrupo.length > 0;
+        const inv = resumosGrupo.reduce((s, r) => s + (r.totalInventario || 0), 0);
+        const falta = resumosGrupo.reduce((s, r) => s + Math.abs(r.totalValorFalta || 0), 0);
+        const sobra = resumosGrupo.reduce((s, r) => s + (r.totalValorSobra || 0), 0);
+        const acur = temImportacaoHoje ? (inv ? ((inv - falta - sobra) / inv) * 100 : 100) : null;
+        return `<tr>
+          <td>${esc(g.nome)}</td>
+          <td class="col-num">${temImportacaoHoje ? formatBRL(inv) : "—"}</td>
+          <td class="col-num">${temImportacaoHoje ? formatBRL(falta) : "—"}</td>
+          <td class="col-num">${temImportacaoHoje ? formatBRL(sobra) : "—"}</td>
+          <td class="col-num" style="color:${acur === null ? 'var(--muted)' : '#4c9a6a'};font-weight:600;">${acur === null ? "sem import hoje" : acur.toFixed(2) + "%"}</td>
+        </tr>`;
+      }).join("");
+    }
+  }
+
+  // Evolução da acurácia do estoque, dia a dia — uma linha só, focada em contar
+  // a história certa pra gestor: "isso tá melhorando". Reaproveita div_resumo_diario
+  // (já agregado por grupo/dia), do mesmo jeito que a Tendência do Histórico.
+  async function carregarTendenciaApresentacao() {
+    const canvas = document.getElementById("apresTendenciaChart");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = dataLocalDe(cutoff);
+      const snap = await getDocs(query(collection(db, "div_resumo_diario"), where("data", ">=", cutoffStr)));
+      const porDia = {};
+      snap.docs.forEach(d => {
+        const h = d.data();
+        if (!porDia[h.data]) porDia[h.data] = { inv: 0, falta: 0, sobra: 0 };
+        porDia[h.data].inv += (h.totalInventario || 0);
+        porDia[h.data].falta += Math.abs(h.totalValorFalta || 0);
+        porDia[h.data].sobra += (h.totalValorSobra || 0);
+      });
+      const dias = Object.keys(porDia).sort();
+      if (dias.length === 0) {
+        document.getElementById("apresTendenciaWrap").style.display = "none";
+        const statusEl = document.getElementById("apresTendenciaStatus");
+        statusEl.style.display = "";
+        statusEl.textContent = "Ainda não há histórico suficiente pra mostrar evolução.";
+        return;
+      }
+      const acuracias = dias.map(d => {
+        const p = porDia[d];
+        return p.inv ? ((p.inv - p.falta - p.sobra) / p.inv) * 100 : 100;
+      });
+      new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: dias.map(d => d.split("-").slice(1).reverse().join("/")),
+          datasets: [{ label: "Acurácia do estoque", data: acuracias, borderColor: "#4c9a6a", backgroundColor: "rgba(76,154,106,0.12)", fill: true, tension: 0.25, pointRadius: 3 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => `Acurácia: ${ctx.raw.toFixed(2)}%` } }
+          },
+          scales: {
+            x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+            y: { ticks: { color: "#8b97a6", callback: v => v + "%" }, grid: { color: "#2e3a4c" }, suggestedMin: Math.max(0, Math.min(...acuracias) - 2), max: 100 }
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Erro carregando tendência de apresentação:", err);
+      document.getElementById("apresTendenciaWrap").style.display = "none";
+      const statusEl = document.getElementById("apresTendenciaStatus");
+      statusEl.style.display = "";
+      statusEl.style.color = "#e08979";
+      statusEl.textContent = `Erro ao carregar: ${err.message}`;
+      canvas.dataset.carregado = "0";
+    }
+  }
+
   async function carregarTendenciaHistoricoAdmin() {
     const canvas = document.getElementById("chartTendenciaHistorico");
     if (!canvas || canvas.dataset.carregado === "1") return;
