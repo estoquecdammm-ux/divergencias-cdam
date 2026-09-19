@@ -405,6 +405,49 @@
         <tbody id="apresTabelaGrupos"><tr class="empty-row"><td colspan="5">Carregando...</td></tr></tbody>
       </table>
     </div>
+
+    <div class="card">
+      <h2>Produtos que mais dão divergência (últimos 30 dias)</h2>
+      <div class="sub">Cada linha é um código. Quem não sai do zero é problema pontual; quem tem uma linha quase sempre acima de zero é problema recorrente — vale investigar a causa raiz.</div>
+      <div style="position:relative;height:300px;margin-top:12px;" id="apresProdutosWrap">
+        <canvas id="apresProdutosChart"></canvas>
+      </div>
+      <div id="apresProdutosStatus" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:40px 0;"></div>
+      <div id="apresProdutosLegenda" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h2 id="apresResumoMesTitulo">Resumo do mês passado</h2>
+          <div class="sub">Médias diárias e os itens que mais deram trabalho no mês.</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;">
+        <div style="background:var(--panel-2);border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:24px;font-weight:700;" id="apresMesInvMedio">—</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Inventário médio/dia</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:24px;font-weight:700;color:#e08979;" id="apresMesFaltaMedia">—</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Falta média/dia</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:8px;padding:16px;text-align:center;">
+          <div style="font-size:24px;font-weight:700;color:#8ec1e6;" id="apresMesSobraMedia">—</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Sobra média/dia</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div>
+          <h3 style="font-size:13px;color:var(--muted);margin-bottom:8px;">Itens com mais divergência no mês</h3>
+          <div id="apresMesTopDivergencia">—</div>
+        </div>
+        <div>
+          <h3 style="font-size:13px;color:var(--muted);margin-bottom:8px;">Itens com mais inversão no mês</h3>
+          <div id="apresMesTopInversao">—</div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section id="secao-usuarios" class="secao" style="display:none;">
@@ -621,7 +664,7 @@
     }
 
     if (alvo === "historico") { carregarDiasHistoricoAdmin(); carregarTendenciaHistoricoAdmin(); carregarTendenciaSituacoesAdmin(); }
-    if (alvo === "apresentacao") { carregarTendenciaApresentacao(); renderApresentacao(); }
+    if (alvo === "apresentacao") { carregarTendenciaApresentacao(); renderApresentacao(); carregarProdutosProblematicos(); carregarResumoMesPassado(); }
     if (alvo === "excel") inicializarExportarAdmin();
   });
 
@@ -1399,6 +1442,183 @@
       statusEl.style.color = "#e08979";
       statusEl.textContent = `Erro ao carregar: ${err.message}`;
       canvas.dataset.carregado = "0";
+    }
+  }
+
+  // ---------- Produtos que mais dão divergência (últimos 30 dias) ----------
+  async function carregarProdutosProblematicos() {
+    const canvas = document.getElementById("apresProdutosChart");
+    if (!canvas || canvas.dataset.carregado === "1") return;
+    canvas.dataset.carregado = "1";
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = dataLocalDe(cutoff);
+      const snap = await getDocs(query(collection(db, "div_historico"), where("data", ">=", cutoffStr)));
+
+      // Agrupa por código: quantos dias teve divergência + valor por dia
+      const porCodigo = new Map(); // codigo -> { diasComDivergencia: Set, porDia: {data: valor}, descricao }
+      snap.docs.forEach(d => {
+        const h = d.data();
+        const temDiv = (h.falta || 0) !== 0 || (h.sobra || 0) !== 0;
+        if (!temDiv) return;
+        if (!porCodigo.has(h.codigo)) porCodigo.set(h.codigo, { dias: new Set(), porDia: {}, descricao: h.descricao || "" });
+        const c = porCodigo.get(h.codigo);
+        c.dias.add(h.data);
+        const valor = Math.abs(h.vlrfalta || 0) + Math.abs(h.vlrsobra || 0);
+        c.porDia[h.data] = (c.porDia[h.data] || 0) + valor;
+      });
+
+      const ranking = [...porCodigo.entries()]
+        .map(([codigo, dados]) => ({ codigo, descricao: dados.descricao, diasComDivergencia: dados.dias.size, porDia: dados.porDia }))
+        .sort((a, b) => b.diasComDivergencia - a.diasComDivergencia)
+        .slice(0, 5);
+
+      if (ranking.length === 0) {
+        document.getElementById("apresProdutosWrap").style.display = "none";
+        const statusEl = document.getElementById("apresProdutosStatus");
+        statusEl.style.display = "";
+        statusEl.textContent = "Nenhuma divergência registrada nos últimos 30 dias.";
+        return;
+      }
+
+      // Eixo X = todos os dias que apareceram em qualquer um dos 5, em ordem
+      const todosOsDias = [...new Set(ranking.flatMap(r => Object.keys(r.porDia)))].sort();
+      const cores = ["#c4483a", "#e8a33d", "#3e7cb1", "#8b5cf6", "#4c9a6a"];
+      const dados = {
+        labels: todosOsDias.map(d => d.split("-").slice(1).reverse().join("/")),
+        datasets: ranking.map((r, i) => ({
+          label: `${r.codigo} (${r.diasComDivergencia}d)`,
+          data: todosOsDias.map(d => r.porDia[d] || 0),
+          borderColor: cores[i], backgroundColor: "transparent", tension: 0.2, pointRadius: 2
+        }))
+      };
+      new Chart(canvas, {
+        type: "line",
+        data: dados,
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#edeff2" } },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBRL(ctx.raw)}` } }
+          },
+          scales: {
+            x: { ticks: { color: "#8b97a6" }, grid: { color: "#2e3a4c" } },
+            y: { ticks: { color: "#8b97a6", callback: v => formatBRL(v) }, grid: { color: "#2e3a4c" }, beginAtZero: true }
+          }
+        }
+      });
+
+      // Justificativa mais recente de cada um desses 5 códigos — busca no div_divergencias ao vivo
+      const legendaEl = document.getElementById("apresProdutosLegenda");
+      legendaEl.innerHTML = ranking.map((r, i) => `
+        <div style="display:flex;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+          <span style="width:12px;height:12px;border-radius:3px;background:${cores[i]};flex-shrink:0;margin-top:3px;"></span>
+          <div>
+            <div style="font-weight:600;font-size:13px;">${esc(r.codigo)} <span style="color:var(--muted);font-weight:400;">— ${esc(r.descricao)} · deu divergência em ${r.diasComDivergencia} dia(s)</span></div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:3px;" id="apresJustif_${slugGrupo(r.codigo)}">carregando motivo...</div>
+          </div>
+        </div>`).join("");
+
+      for (const r of ranking) {
+        const docId = sanitizarIdApres(r.codigo);
+        try {
+          const snapDiv = await getDoc(doc(db, "div_divergencias", docId));
+          const elJust = document.getElementById(`apresJustif_${slugGrupo(r.codigo)}`);
+          if (elJust) {
+            const j = snapDiv.exists() ? (snapDiv.data().justificativa || "") : "";
+            elJust.textContent = j ? `Motivo mais recente: "${j}"` : "Ainda sem justificativa registrada.";
+          }
+        } catch (e) { /* segue sem quebrar os outros */ }
+      }
+    } catch (err) {
+      console.error("Erro carregando produtos problemáticos:", err);
+      document.getElementById("apresProdutosWrap").style.display = "none";
+      const statusEl = document.getElementById("apresProdutosStatus");
+      statusEl.style.display = "";
+      statusEl.style.color = "#e08979";
+      statusEl.textContent = `Erro ao carregar: ${err.message}`;
+      canvas.dataset.carregado = "0";
+    }
+  }
+  function sanitizarIdApres(codigo) { return codigo.replace(/[\/\s]/g, "_"); }
+
+  // ---------- Resumo do mês passado ----------
+  async function carregarResumoMesPassado() {
+    const containerId = "apresMesInvMedio";
+    const el = document.getElementById(containerId);
+    if (!el || el.dataset.carregado === "1") return;
+    el.dataset.carregado = "1";
+    try {
+      const hoje = new Date();
+      const primeiroDiaMesPassado = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+      const ultimoDiaMesPassado = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+      const fmtLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const inicio = fmtLocal(primeiroDiaMesPassado);
+      const fim = fmtLocal(ultimoDiaMesPassado);
+      const nomeMes = primeiroDiaMesPassado.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      document.getElementById("apresResumoMesTitulo").textContent = `Resumo de ${nomeMes}`;
+
+      const [snapResumo, snapHistorico] = await Promise.all([
+        getDocs(query(collection(db, "div_resumo_diario"), where("data", ">=", inicio), where("data", "<=", fim))),
+        getDocs(query(collection(db, "div_historico"), where("data", ">=", inicio), where("data", "<=", fim)))
+      ]);
+
+      // Médias diárias
+      const porDiaResumo = {};
+      snapResumo.docs.forEach(d => {
+        const h = d.data();
+        if (!porDiaResumo[h.data]) porDiaResumo[h.data] = { inv: 0, falta: 0, sobra: 0 };
+        porDiaResumo[h.data].inv += (h.totalInventario || 0);
+        porDiaResumo[h.data].falta += Math.abs(h.totalValorFalta || 0);
+        porDiaResumo[h.data].sobra += (h.totalValorSobra || 0);
+      });
+      const diasComDado = Object.keys(porDiaResumo);
+      if (diasComDado.length === 0) {
+        document.getElementById("apresMesInvMedio").textContent = "—";
+        document.getElementById("apresMesFaltaMedia").textContent = "—";
+        document.getElementById("apresMesSobraMedia").textContent = "—";
+        document.getElementById("apresMesTopDivergencia").innerHTML = `<div style="color:var(--muted);font-size:13px;">Sem dados importados em ${nomeMes}.</div>`;
+        document.getElementById("apresMesTopInversao").innerHTML = `<div style="color:var(--muted);font-size:13px;">Sem dados importados em ${nomeMes}.</div>`;
+        return;
+      }
+      const mediaInv = diasComDado.reduce((s, d) => s + porDiaResumo[d].inv, 0) / diasComDado.length;
+      const mediaFalta = diasComDado.reduce((s, d) => s + porDiaResumo[d].falta, 0) / diasComDado.length;
+      const mediaSobra = diasComDado.reduce((s, d) => s + porDiaResumo[d].sobra, 0) / diasComDado.length;
+      document.getElementById("apresMesInvMedio").textContent = formatBRL(mediaInv);
+      document.getElementById("apresMesFaltaMedia").textContent = formatBRL(mediaFalta);
+      document.getElementById("apresMesSobraMedia").textContent = formatBRL(mediaSobra);
+
+      // Top divergência (por número de dias com falta/sobra naquele mês)
+      const porCodigoDiv = new Map();
+      const porCodigoInv = new Map();
+      snapHistorico.docs.forEach(d => {
+        const h = d.data();
+        if ((h.falta || 0) !== 0 || (h.sobra || 0) !== 0) {
+          if (!porCodigoDiv.has(h.codigo)) porCodigoDiv.set(h.codigo, { dias: 0, descricao: h.descricao || "" });
+          porCodigoDiv.get(h.codigo).dias++;
+        }
+        if (h.situacao === "inversao") {
+          if (!porCodigoInv.has(h.codigo)) porCodigoInv.set(h.codigo, { dias: 0, descricao: h.descricao || "" });
+          porCodigoInv.get(h.codigo).dias++;
+        }
+      });
+      const montarLista = (mapa) => {
+        const top = [...mapa.entries()].map(([codigo, d]) => ({ codigo, ...d })).sort((a, b) => b.dias - a.dias).slice(0, 5);
+        if (top.length === 0) return `<div style="color:var(--muted);font-size:13px;">Nenhum registro encontrado.</div>`;
+        return top.map((t, i) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;${i < top.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+            <span style="font-size:13px;"><strong>${esc(t.codigo)}</strong> <span style="color:var(--muted);">${esc(t.descricao)}</span></span>
+            <span style="font-size:13px;font-weight:600;">${t.dias} dia(s)</span>
+          </div>`).join("");
+      };
+      document.getElementById("apresMesTopDivergencia").innerHTML = montarLista(porCodigoDiv);
+      document.getElementById("apresMesTopInversao").innerHTML = montarLista(porCodigoInv);
+    } catch (err) {
+      console.error("Erro carregando resumo do mês passado:", err);
+      document.getElementById("apresMesInvMedio").textContent = "Erro";
+      document.getElementById(containerId).dataset.carregado = "0";
     }
   }
 
