@@ -370,6 +370,16 @@
       </label>
     </div>
 
+    <div class="card" id="cardLimpezaVolumes" style="margin-top:20px;border-color:var(--accent);display:none;">
+      <h2>Limpeza: divergências de teste (integração de volumes)</h2>
+      <div class="sub" style="color:var(--muted);">Apaga só os itens criados durante o teste da ideia de "conferência de volumes" (que já foi descartada) — identificados pelo marcador interno <code>origemVolume</code>. Não mexe em nenhuma divergência normal de falta/sobra.</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+        <button class="btn-danger" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border);" id="btnChecarLimpezaVolumes">Checar quantos itens existem</button>
+        <button class="btn-danger" id="btnApagarLimpezaVolumes" style="display:none;">Apagar esses itens</button>
+      </div>
+      <div class="import-status" id="statusLimpezaVolumes" style="margin-top:10px;"></div>
+    </div>
+
     <div class="card danger-card" id="secaoZonaPerigo" style="margin-top:20px;display:none;">
       <h2>Zona de perigo</h2>
       <div class="sub" style="color:var(--muted);">Escolhe o que quer apagar. Isso é permanente — não tem como desfazer.</div>
@@ -578,6 +588,7 @@
 
     if (perfilSnap.data().oculto === true) {
       document.getElementById("secaoZonaPerigo").style.display = "";
+      document.getElementById("cardLimpezaVolumes").style.display = "";
     }
   });
 
@@ -1805,6 +1816,59 @@
     const checks = document.querySelectorAll(".check-danger input[type=checkbox]");
     const todasMarcadas = Array.from(checks).every(c => c.checked);
     checks.forEach(c => c.checked = !todasMarcadas);
+  });
+
+  // ---------- Limpeza específica: divergências de teste da ideia de volumes (descartada) ----------
+  let itensParaLimparVolumes = [];
+  document.getElementById("btnChecarLimpezaVolumes").addEventListener("click", async () => {
+    const statusEl = document.getElementById("statusLimpezaVolumes");
+    statusEl.className = "import-status show";
+    statusEl.textContent = "Procurando...";
+    try {
+      const snap = await getDocs(query(collection(db, "div_divergencias"), where("origemVolume", "==", true)));
+      itensParaLimparVolumes = snap.docs.map(d => d.id);
+      if (itensParaLimparVolumes.length === 0) {
+        statusEl.className = "import-status show ok";
+        statusEl.textContent = "Nenhum item encontrado — não tem nada pra limpar.";
+        document.getElementById("btnApagarLimpezaVolumes").style.display = "none";
+      } else {
+        statusEl.className = "import-status show";
+        statusEl.textContent = `Achei ${itensParaLimparVolumes.length} item(ns) criado(s) pelo teste de volume.`;
+        document.getElementById("btnApagarLimpezaVolumes").style.display = "";
+      }
+    } catch (err) {
+      console.error("Erro ao checar limpeza de volumes:", err);
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Erro: " + err.message;
+    }
+  });
+
+  document.getElementById("btnApagarLimpezaVolumes").addEventListener("click", async () => {
+    if (itensParaLimparVolumes.length === 0) return;
+    if (!confirm(`Tem certeza que quer apagar ${itensParaLimparVolumes.length} item(ns) criado(s) pelo teste de volume? Isso não afeta nenhuma divergência normal.`)) return;
+    const statusEl = document.getElementById("statusLimpezaVolumes");
+    statusEl.className = "import-status show";
+    statusEl.textContent = "Apagando...";
+    try {
+      let lote = writeBatch(db);
+      let ops = 0;
+      const commits = [];
+      for (const id of itensParaLimparVolumes) {
+        lote.delete(doc(db, "div_divergencias", id));
+        ops++;
+        if (ops >= 450) { commits.push(lote.commit()); lote = writeBatch(db); ops = 0; }
+      }
+      commits.push(lote.commit());
+      await Promise.all(commits);
+      statusEl.className = "import-status show ok";
+      statusEl.textContent = `${itensParaLimparVolumes.length} item(ns) apagado(s) com sucesso.`;
+      itensParaLimparVolumes = [];
+      document.getElementById("btnApagarLimpezaVolumes").style.display = "none";
+    } catch (err) {
+      console.error("Erro ao apagar limpeza de volumes:", err);
+      statusEl.className = "import-status show err";
+      statusEl.textContent = "Erro: " + err.message;
+    }
   });
 
   document.getElementById("btnApagarSelecionados").addEventListener("click", async () => {
